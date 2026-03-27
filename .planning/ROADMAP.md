@@ -15,7 +15,7 @@ This roadmap delivers a production-ready GitOps deployment pipeline for Firecraw
 
 ## Phases
 
-- [ ] **Phase 1: CI/CD Pipeline Foundation** - Automated image builds and manifest updates
+- [x] **Phase 1: CI/CD Pipeline Foundation** - Automated image builds and manifest updates (completed 2026-03-27)
 - [ ] **Phase 2: Argo CD Integration** - GitOps continuous deployment setup
 - [ ] **Phase 3: Foundation Resources** - Namespace, RBAC, ConfigMaps, Secrets
 - [ ] **Phase 4: Storage Layer** - Persistent volumes for stateful services
@@ -27,7 +27,7 @@ This roadmap delivers a production-ready GitOps deployment pipeline for Firecraw
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. CI/CD Pipeline Foundation | 0/2 | Planning complete | - |
+| 1. CI/CD Pipeline Foundation | 2/2 | Complete   | 2026-03-27 |
 | 2. Argo CD Integration | 0/? | Not started | - |
 | 3. Foundation Resources | 0/? | Not started | - |
 | 4. Storage Layer | 0/? | Not started | - |
@@ -55,7 +55,7 @@ This roadmap delivers a production-ready GitOps deployment pipeline for Firecraw
 7. Manifest changes are committed back to main with [skip ci] to prevent loops
 8. Workflow authenticates to GCP using Workload Identity Federation (no long-lived keys)
 
-**Plans:** 2 plans
+**Plans:** 2/2 plans complete
 
 Plans:
 - [ ] 01-01-PLAN.md -- Foundation files: ingestion-ui Dockerfile + k8s/base Kustomize structure

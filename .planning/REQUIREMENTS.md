@@ -9,14 +9,14 @@ Requirements for GitOps deployment automation to GKE client-cluster.
 
 ### CI Pipeline
 
-- [ ] **CI-01**: GitHub Actions workflow triggers on push to main branch
+- [x] **CI-01**: GitHub Actions workflow triggers on push to main branch
 - [x] **CI-02**: Workflow builds Docker images for firecrawl-api and ingestion-ui
-- [ ] **CI-03**: Images tagged with 7-character Git SHA (immutable tags)
-- [ ] **CI-04**: Images pushed to Google Container Registry in prometheus-461323 project
-- [ ] **CI-05**: Workflow verifies image availability in GCR before manifest updates
+- [x] **CI-03**: Images tagged with 7-character Git SHA (immutable tags)
+- [x] **CI-04**: Images pushed to Google Container Registry in prometheus-461323 project
+- [x] **CI-05**: Workflow verifies image availability in GCR before manifest updates
 - [x] **CI-06**: Workflow updates k8s/ manifests with new image tags
-- [ ] **CI-07**: Workflow commits manifest changes with [skip ci] to prevent loops
-- [ ] **CI-08**: Workflow uses Workload Identity Federation for GCP authentication
+- [x] **CI-07**: Workflow commits manifest changes with [skip ci] to prevent loops
+- [x] **CI-08**: Workflow uses Workload Identity Federation for GCP authentication
 
 ### GitOps Automation
 
@@ -130,14 +130,14 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| CI-01 | Phase 1 | Pending |
+| CI-01 | Phase 1 | Complete |
 | CI-02 | Phase 1 | Complete |
-| CI-03 | Phase 1 | Pending |
-| CI-04 | Phase 1 | Pending |
-| CI-05 | Phase 1 | Pending |
+| CI-03 | Phase 1 | Complete |
+| CI-04 | Phase 1 | Complete |
+| CI-05 | Phase 1 | Complete |
 | CI-06 | Phase 1 | Complete |
-| CI-07 | Phase 1 | Pending |
-| CI-08 | Phase 1 | Pending |
+| CI-07 | Phase 1 | Complete |
+| CI-08 | Phase 1 | Complete |
 | GITOPS-01 | Phase 2 | Pending |
 | GITOPS-02 | Phase 2 | Pending |
 | GITOPS-03 | Phase 2 | Pending |
