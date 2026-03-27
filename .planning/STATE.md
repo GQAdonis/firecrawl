@@ -2,15 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: planning
-last_updated: "2026-03-27T20:20:42Z"
+status: executing
+last_updated: "2026-03-27T21:04:26.072Z"
 progress:
   total_phases: 7
   completed_phases: 4
-  total_plans: 7
+  total_plans: 8
   completed_plans: 7
-  percent: 100
-last_completed_plan: "04-01"
+  percent: 88
 ---
 
 # Project State: Firecrawl GKE Deployment Automation
@@ -35,15 +34,15 @@ Roadmap created with 7 sequential phases. Ready to begin planning Phase 1 (CI/CD
 
 ## Current Position
 
-**Phase:** 04-storage-layer
-**Plan:** 1 of 1 complete
-**Status:** Phase complete
-**Progress:** [██████████] 100%
+**Phase:** 05-data-layer
+**Plan:** 1 of 2 complete
+**Status:** In progress
+**Progress:** [█████████░] 88%
 
 ## Performance Metrics
 
 **Phases Completed:** 4/7 (57%)
-**Plans Completed:** 7 (01-01, 01-02, 02-01, 03-01, 03-02, 04-01)
+**Plans Completed:** 8 (01-01, 01-02, 02-01, 03-01, 03-02, 04-01, 05-01)
 **Tests Passed:** 0
 **Active Blockers:** 0
 
@@ -85,6 +84,11 @@ Roadmap created with 7 sequential phases. Ready to begin planning Phase 1 (CI/CD
 - [Phase 04]: Retain reclaim policy prevents accidental data loss if PVCs are deleted (manual cleanup required but data is safe)
 - [Phase 04]: Verified cluster zones (us-central1-a/b/c/f) from kubectl query instead of placeholder zones for accurate topology constraints
 - [Phase 04]: ReadWriteOnce access mode for GKE pd-standard compatibility (does not support ReadWriteMany)
+| Phase 05 P01 | 240 | 3 tasks | 5 files |
+- [Phase 05]: Use default ServiceAccount for Postgres and Redis - Database pods do not need Kubernetes API access
+- [Phase 05]: PGDATA subdirectory /var/lib/postgresql/data/pgdata to avoid ext4 lost+found conflict
+- [Phase 05]: fsGroup 999 for both StatefulSets to match postgres and redis user UIDs in Alpine images
+- [Phase 05]: Redis AOF persistence with everysec fsync balances durability and performance
 
 ### Open Questions
 
@@ -124,7 +128,7 @@ Roadmap created with 7 sequential phases. Ready to begin planning Phase 1 (CI/CD
 | 2. Argo CD Integration | Complete | 7 | 7 | 1/1 |
 | 3. Foundation Resources | Complete | 6 | 6 | 2/2 |
 | 4. Storage Layer | Complete | 5 | 5 | 1/1 |
-| 5. Data Layer | Not started | 9 | 8 | 0/? |
+| 5. Data Layer | In progress | 9 | 8 | 1/2 |
 | 6. Application Layer | Not started | 16 | 10 | 0/? |
 | 7. External Access | Not started | 8 | 8 | 0/? |
 
@@ -133,10 +137,10 @@ Roadmap created with 7 sequential phases. Ready to begin planning Phase 1 (CI/CD
 ## Session Continuity
 
 **What just happened:**
-Completed Phase 04 Plan 01 (Persistent Storage Infrastructure). Created custom StorageClass (dc26d895): standard-immediate with volumeBindingMode: Immediate, reclaimPolicy: Retain, allowVolumeExpansion: true, and allowedTopologies restricted to cluster zones us-central1-a/b/c/f (verified from kubectl). Created Postgres PVC requesting 10Gi and Redis PVC requesting 1Gi, both referencing standard-immediate StorageClass with ReadWriteOnce access mode. Updated kustomization.yaml (ebb3351a) to include all three storage resources (StorageClass, pvc-postgres, pvc-redis) positioned after ConfigMaps and before Deployments. Phase 04 complete (1/1 plans done).
+Completed Phase 05 Plan 01 (Data Layer StatefulSets and Services). Created Postgres StatefulSet (70387918, 0e55acac): postgres:15-alpine with PVC mount to postgres-data, 500m/1Gi requests and 2/4Gi limits, pg_isready health probes with 30s/60s delays, PGDATA subdirectory, and fsGroup 999. Created Redis StatefulSet (1ee0a8f7): redis:7-alpine with PVC mount to redis-data, AOF persistence enabled, 200m/512Mi requests and 1/2Gi limits, redis-cli ping probes. Created ClusterIP Services for postgres (port 5432) and redis (port 6379). Fixed validation script arithmetic bug (6c3c3833). Updated kustomization.yaml to include all 4 resources. Phase 05 Plan 01 complete (1/2 plans done).
 
 **What's next:**
-Phase 04 (Storage Layer) complete. Proceed to Phase 05 (Data Layer) with `/gsd:plan-phase 5` or review phase with `/gsd:verify-work`.
+Phase 05 Plan 02 (Postgres Backup CronJob with Cloud Storage Integration). Create backup-serviceaccount.yaml with Workload Identity, backup-cronjob.yaml with 6-hour schedule, pg_dump to GCS bucket.
 
 **If context was lost:**
 Read this STATE.md for current position. Read ROADMAP.md for phase structure. Read PROJECT.md for core value and constraints. Read REQUIREMENTS.md for detailed requirements. Start with `/gsd:plan-phase 1`.

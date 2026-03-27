@@ -47,13 +47,13 @@ Requirements for GitOps deployment automation to GKE client-cluster.
 
 ### Data Layer
 
-- [ ] **DATA-01**: Postgres StatefulSet deployed with PVC mount
-- [ ] **DATA-02**: Postgres has memory and CPU resource limits configured
-- [ ] **DATA-03**: Postgres has readiness and liveness probes configured
-- [ ] **DATA-04**: Redis StatefulSet deployed with PVC mount
-- [ ] **DATA-05**: Redis has memory and CPU resource limits configured
-- [ ] **DATA-06**: Redis has readiness and liveness probes configured
-- [ ] **DATA-07**: Kubernetes Services created for Postgres and Redis
+- [x] **DATA-01**: Postgres StatefulSet deployed with PVC mount
+- [x] **DATA-02**: Postgres has memory and CPU resource limits configured
+- [x] **DATA-03**: Postgres has readiness and liveness probes configured
+- [x] **DATA-04**: Redis StatefulSet deployed with PVC mount
+- [x] **DATA-05**: Redis has memory and CPU resource limits configured
+- [x] **DATA-06**: Redis has readiness and liveness probes configured
+- [x] **DATA-07**: Kubernetes Services created for Postgres and Redis
 - [ ] **DATA-08**: CronJob created for Postgres pg_dump backups to GCS (every 6 hours)
 - [ ] **DATA-09**: Backup restoration procedure documented
 
@@ -156,13 +156,13 @@ Which phases cover which requirements. Updated during roadmap creation.
 | STOR-03 | Phase 4 | Complete |
 | STOR-04 | Phase 4 | Complete |
 | STOR-05 | Phase 4 | Complete |
-| DATA-01 | Phase 5 | Pending |
-| DATA-02 | Phase 5 | Pending |
-| DATA-03 | Phase 5 | Pending |
-| DATA-04 | Phase 5 | Pending |
-| DATA-05 | Phase 5 | Pending |
-| DATA-06 | Phase 5 | Pending |
-| DATA-07 | Phase 5 | Pending |
+| DATA-01 | Phase 5 | Complete |
+| DATA-02 | Phase 5 | Complete |
+| DATA-03 | Phase 5 | Complete |
+| DATA-04 | Phase 5 | Complete |
+| DATA-05 | Phase 5 | Complete |
+| DATA-06 | Phase 5 | Complete |
+| DATA-07 | Phase 5 | Complete |
 | DATA-08 | Phase 5 | Pending |
 | DATA-09 | Phase 5 | Pending |
 | APP-01 | Phase 6 | Pending |
