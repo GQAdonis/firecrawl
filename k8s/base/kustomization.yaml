@@ -5,6 +5,9 @@ resources:
   - namespace.yaml
   - serviceaccounts.yaml
   - rbac.yaml
+  - configmap-database.yaml
+  - configmap-redis.yaml
+  - configmap-application.yaml
   - api-deployment.yaml
   - ui-deployment.yaml
 
