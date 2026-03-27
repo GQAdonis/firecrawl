@@ -11,6 +11,10 @@ resources:
   - storage-class-immediate.yaml
   - pvc-postgres.yaml
   - pvc-redis.yaml
+  - postgres-statefulset.yaml
+  - postgres-service.yaml
+  - redis-statefulset.yaml
+  - redis-service.yaml
   - api-deployment.yaml
   - ui-deployment.yaml
 
