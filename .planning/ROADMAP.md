@@ -18,7 +18,7 @@ This roadmap delivers a production-ready GitOps deployment pipeline for Firecraw
 - [x] **Phase 1: CI/CD Pipeline Foundation** - Automated image builds and manifest updates (completed 2026-03-27)
 - [x] **Phase 2: Argo CD Integration** - GitOps continuous deployment setup (completed 2026-03-27)
 - [x] **Phase 3: Foundation Resources** - Namespace, RBAC, ConfigMaps, Secrets (completed 2026-03-27)
-- [ ] **Phase 4: Storage Layer** - Persistent volumes for stateful services
+- [x] **Phase 4: Storage Layer** - Persistent volumes for stateful services (completed 2026-03-27)
 - [ ] **Phase 5: Data Layer** - Postgres and Redis StatefulSets with backups
 - [ ] **Phase 6: Application Layer** - API, Workers, UI, and Playwright deployments
 - [ ] **Phase 7: External Access** - HTTPRoutes with TLS termination
@@ -30,7 +30,7 @@ This roadmap delivers a production-ready GitOps deployment pipeline for Firecraw
 | 1. CI/CD Pipeline Foundation | 2/2 | Complete    | 2026-03-27 |
 | 2. Argo CD Integration | 1/1 | Complete    | 2026-03-27 |
 | 3. Foundation Resources | 2/2 | Complete    | 2026-03-27 |
-| 4. Storage Layer | 0/1 | Planning | - |
+| 4. Storage Layer | 1/1 | Complete    | 2026-03-27 |
 | 5. Data Layer | 0/? | Not started | - |
 | 6. Application Layer | 0/? | Not started | - |
 | 7. External Access | 0/? | Not started | - |
@@ -132,10 +132,10 @@ Plans:
 4. PersistentVolume reclaim policy is set to Retain
 5. Volume topology is validated against node zones
 
-**Plans:** 1 plan
+**Plans:** 1/1 plans complete
 
 Plans:
-- [ ] 04-01-PLAN.md -- Custom StorageClass with immediate binding + Postgres/Redis PVCs
+- [x] 04-01-PLAN.md -- Custom StorageClass with immediate binding + Postgres/Redis PVCs (completed 2026-03-27)
 
 **Research Note:** Researched. Custom StorageClass required because GKE defaults use WaitForFirstConsumer. Zone topology must be validated against cluster nodes.
 

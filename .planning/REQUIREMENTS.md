@@ -39,11 +39,11 @@ Requirements for GitOps deployment automation to GKE client-cluster.
 
 ### Storage
 
-- [ ] **STOR-01**: PersistentVolumeClaim created for Postgres (10Gi)
-- [ ] **STOR-02**: PersistentVolumeClaim created for Redis (1Gi)
-- [ ] **STOR-03**: PVCs use immediate-binding storage class
-- [ ] **STOR-04**: PersistentVolume reclaim policy set to Retain
-- [ ] **STOR-05**: Volume topology validated against node zones
+- [x] **STOR-01**: PersistentVolumeClaim created for Postgres (10Gi)
+- [x] **STOR-02**: PersistentVolumeClaim created for Redis (1Gi)
+- [x] **STOR-03**: PVCs use immediate-binding storage class
+- [x] **STOR-04**: PersistentVolume reclaim policy set to Retain
+- [x] **STOR-05**: Volume topology validated against node zones
 
 ### Data Layer
 
@@ -151,11 +151,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 | FOUND-04 | Phase 3 | Complete |
 | FOUND-05 | Phase 3 | Complete |
 | FOUND-06 | Phase 3 | Complete |
-| STOR-01 | Phase 4 | Pending |
-| STOR-02 | Phase 4 | Pending |
-| STOR-03 | Phase 4 | Pending |
-| STOR-04 | Phase 4 | Pending |
-| STOR-05 | Phase 4 | Pending |
+| STOR-01 | Phase 4 | Complete |
+| STOR-02 | Phase 4 | Complete |
+| STOR-03 | Phase 4 | Complete |
+| STOR-04 | Phase 4 | Complete |
+| STOR-05 | Phase 4 | Complete |
 | DATA-01 | Phase 5 | Pending |
 | DATA-02 | Phase 5 | Pending |
 | DATA-03 | Phase 5 | Pending |

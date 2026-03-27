@@ -3,13 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: planning
-last_updated: "2026-03-27T20:02:40.414Z"
+last_updated: "2026-03-27T20:20:42Z"
 progress:
   total_phases: 7
-  completed_phases: 3
-  total_plans: 5
-  completed_plans: 5
+  completed_phases: 4
+  total_plans: 7
+  completed_plans: 7
   percent: 100
+last_completed_plan: "04-01"
 ---
 
 # Project State: Firecrawl GKE Deployment Automation
@@ -34,15 +35,15 @@ Roadmap created with 7 sequential phases. Ready to begin planning Phase 1 (CI/CD
 
 ## Current Position
 
-**Phase:** 03-foundation-resources
-**Plan:** 2 of 2 complete
-**Status:** Ready to plan
+**Phase:** 04-storage-layer
+**Plan:** 1 of 1 complete
+**Status:** Phase complete
 **Progress:** [██████████] 100%
 
 ## Performance Metrics
 
-**Phases Completed:** 3/7 (43%)
-**Plans Completed:** 6 (01-01, 01-02, 02-01, 03-01, 03-02)
+**Phases Completed:** 4/7 (57%)
+**Plans Completed:** 7 (01-01, 01-02, 02-01, 03-01, 03-02, 04-01)
 **Tests Passed:** 0
 **Active Blockers:** 0
 
@@ -79,6 +80,11 @@ Roadmap created with 7 sequential phases. Ready to begin planning Phase 1 (CI/CD
 - [Phase 03]: Structured ConfigMaps by concern (database, redis, application) instead of monolithic ConfigMap for partial updates and clearer ownership
 - [Phase 03]: Manual kubectl secret creation with documented runbook instead of encrypted GitOps secrets for v1 simplicity
 - [Phase 03]: Kubernetes internal DNS for service hostnames ({service}.{namespace}.svc.cluster.local) for standard K8s service discovery
+| Phase 04 P01 | 100 | 2 tasks | 4 files |
+- [Phase 04]: Immediate binding mode for StorageClass to ensure volumes provision before StatefulSet scheduling (avoids WaitForFirstConsumer delays)
+- [Phase 04]: Retain reclaim policy prevents accidental data loss if PVCs are deleted (manual cleanup required but data is safe)
+- [Phase 04]: Verified cluster zones (us-central1-a/b/c/f) from kubectl query instead of placeholder zones for accurate topology constraints
+- [Phase 04]: ReadWriteOnce access mode for GKE pd-standard compatibility (does not support ReadWriteMany)
 
 ### Open Questions
 
@@ -117,7 +123,7 @@ Roadmap created with 7 sequential phases. Ready to begin planning Phase 1 (CI/CD
 | 1. CI/CD Pipeline Foundation | Complete | 8 | 8 | 2/2 |
 | 2. Argo CD Integration | Complete | 7 | 7 | 1/1 |
 | 3. Foundation Resources | Complete | 6 | 6 | 2/2 |
-| 4. Storage Layer | Not started | 5 | 5 | 0/? |
+| 4. Storage Layer | Complete | 5 | 5 | 1/1 |
 | 5. Data Layer | Not started | 9 | 8 | 0/? |
 | 6. Application Layer | Not started | 16 | 10 | 0/? |
 | 7. External Access | Not started | 8 | 8 | 0/? |
@@ -127,10 +133,10 @@ Roadmap created with 7 sequential phases. Ready to begin planning Phase 1 (CI/CD
 ## Session Continuity
 
 **What just happened:**
-Completed Phase 03 Plan 02 (Configuration Resources). Created 3 structured ConfigMaps (19e75a64): configmap-database.yaml with Postgres connection config, configmap-redis.yaml with Redis URLs, configmap-application.yaml with runtime settings. All service hostnames use K8s internal DNS format (*.firecrawl.svc.cluster.local). Created secrets-README.md (b5099a4b) documenting manual kubectl secret creation for firecrawl-database-secret (POSTGRES_USER, POSTGRES_PASSWORD) and firecrawl-api-secrets (OPENAI_API_KEY, SUPABASE tokens, BULL_AUTH_KEY). Updated kustomization.yaml to include all ConfigMap resources. No actual secret values committed. Phase 03 complete (2/2 plans done).
+Completed Phase 04 Plan 01 (Persistent Storage Infrastructure). Created custom StorageClass (dc26d895): standard-immediate with volumeBindingMode: Immediate, reclaimPolicy: Retain, allowVolumeExpansion: true, and allowedTopologies restricted to cluster zones us-central1-a/b/c/f (verified from kubectl). Created Postgres PVC requesting 10Gi and Redis PVC requesting 1Gi, both referencing standard-immediate StorageClass with ReadWriteOnce access mode. Updated kustomization.yaml (ebb3351a) to include all three storage resources (StorageClass, pvc-postgres, pvc-redis) positioned after ConfigMaps and before Deployments. Phase 04 complete (1/1 plans done).
 
 **What's next:**
-Phase 03 (Foundation Resources) complete. Proceed to Phase 04 (Storage Layer) with `/gsd:plan-phase 4` or review phase with `/gsd:verify-work`.
+Phase 04 (Storage Layer) complete. Proceed to Phase 05 (Data Layer) with `/gsd:plan-phase 5` or review phase with `/gsd:verify-work`.
 
 **If context was lost:**
 Read this STATE.md for current position. Read ROADMAP.md for phase structure. Read PROJECT.md for core value and constraints. Read REQUIREMENTS.md for detailed requirements. Start with `/gsd:plan-phase 1`.
