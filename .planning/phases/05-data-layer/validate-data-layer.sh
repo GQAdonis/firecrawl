@@ -11,10 +11,10 @@ check() {
   printf "%-8s %-60s " "$id" "$desc"
   if eval "$cmd" >/dev/null 2>&1; then
     echo "PASS"
-    ((PASS++))
+    PASS=$((PASS + 1))
   else
     echo "FAIL"
-    ((FAIL++))
+    FAIL=$((FAIL + 1))
   fi
 }
 
@@ -23,13 +23,13 @@ check_manifest() {
   printf "%-8s %-60s " "$id" "$desc"
   if [ -f "$file" ] && grep -q "$pattern" "$file"; then
     echo "PASS"
-    ((PASS++))
+    PASS=$((PASS + 1))
   elif [ ! -f "$file" ]; then
     echo "SKIP (file not found: $file)"
-    ((SKIP++))
+    SKIP=$((SKIP + 1))
   else
     echo "FAIL"
-    ((FAIL++))
+    FAIL=$((FAIL + 1))
   fi
 }
 
