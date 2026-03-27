@@ -7,7 +7,6 @@ metadata:
 provisioner: pd.csi.storage.gke.io
 parameters:
   type: pd-standard
-  fstype: ext4
 volumeBindingMode: Immediate
 reclaimPolicy: Retain
 allowVolumeExpansion: true
