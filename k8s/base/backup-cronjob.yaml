@@ -1,0 +1,90 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: postgres-backup
+  namespace: firecrawl
+  labels:
+    app: postgres-backup
+    component: backup
+spec:
+  schedule: "0 */6 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            app: postgres-backup
+            component: backup
+        spec:
+          serviceAccountName: postgres-backup-sa
+          restartPolicy: OnFailure
+          containers:
+          - name: backup
+            image: google/cloud-sdk:alpine
+            command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+
+              # Install postgresql-client
+              apk add --no-cache postgresql15-client
+
+              # Set timestamp for backup file
+              TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+              BACKUP_FILE="postgres-backup-${TIMESTAMP}.sql.gz"
+
+              echo "Starting backup: ${BACKUP_FILE}"
+
+              # Run pg_dump and compress
+              PGPASSWORD="${POSTGRES_PASSWORD}" pg_dump \
+                -h postgres-service.firecrawl.svc.cluster.local \
+                -U "${POSTGRES_USER}" \
+                -d "${POSTGRES_DB}" \
+                --clean --if-exists --create \
+                | gzip > /tmp/${BACKUP_FILE}
+
+              # Upload to GCS bucket
+              gsutil cp /tmp/${BACKUP_FILE} gs://firecrawl-backups/postgres/
+
+              # Verify upload
+              gsutil ls gs://firecrawl-backups/postgres/${BACKUP_FILE}
+
+              echo "Backup completed: ${BACKUP_FILE}"
+
+              # Cleanup old backups (keep last 30 days = 120 backups at 6-hour intervals)
+              CUTOFF_DATE=$(date -d '30 days ago' +%Y%m%d 2>/dev/null || date -v-30d +%Y%m%d)
+              gsutil ls gs://firecrawl-backups/postgres/ | while read backup; do
+                BACKUP_DATE=$(echo $backup | grep -oP '\d{8}' | head -1)
+                if [ -n "$BACKUP_DATE" ] && [ "$BACKUP_DATE" -lt "$CUTOFF_DATE" ] 2>/dev/null; then
+                  echo "Deleting old backup: $backup"
+                  gsutil rm $backup
+                fi
+              done
+            env:
+            - name: POSTGRES_DB
+              valueFrom:
+                configMapKeyRef:
+                  name: firecrawl-database
+                  key: POSTGRES_DB
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: firecrawl-database-secret
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: firecrawl-database-secret
+                  key: POSTGRES_PASSWORD
+            resources:
+              requests:
+                cpu: 100m
+                memory: 256Mi
+              limits:
+                cpu: 500m
+                memory: 1Gi
