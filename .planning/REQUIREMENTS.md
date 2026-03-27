@@ -54,8 +54,8 @@ Requirements for GitOps deployment automation to GKE client-cluster.
 - [x] **DATA-05**: Redis has memory and CPU resource limits configured
 - [x] **DATA-06**: Redis has readiness and liveness probes configured
 - [x] **DATA-07**: Kubernetes Services created for Postgres and Redis
-- [ ] **DATA-08**: CronJob created for Postgres pg_dump backups to GCS (every 6 hours)
-- [ ] **DATA-09**: Backup restoration procedure documented
+- [x] **DATA-08**: CronJob created for Postgres pg_dump backups to GCS (every 6 hours)
+- [x] **DATA-09**: Backup restoration procedure documented
 
 ### Application Layer
 
@@ -163,8 +163,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | DATA-05 | Phase 5 | Complete |
 | DATA-06 | Phase 5 | Complete |
 | DATA-07 | Phase 5 | Complete |
-| DATA-08 | Phase 5 | Pending |
-| DATA-09 | Phase 5 | Pending |
+| DATA-08 | Phase 5 | Complete |
+| DATA-09 | Phase 5 | Complete |
 | APP-01 | Phase 6 | Pending |
 | APP-02 | Phase 6 | Pending |
 | APP-03 | Phase 6 | Pending |

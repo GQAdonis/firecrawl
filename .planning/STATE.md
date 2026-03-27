@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-last_updated: "2026-03-27T21:04:26.072Z"
+last_updated: "2026-03-27T21:12:23.292Z"
 progress:
   total_phases: 7
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 8
-  completed_plans: 7
-  percent: 88
+  completed_plans: 8
+  percent: 100
 ---
 
 # Project State: Firecrawl GKE Deployment Automation
@@ -35,14 +35,14 @@ Roadmap created with 7 sequential phases. Ready to begin planning Phase 1 (CI/CD
 ## Current Position
 
 **Phase:** 05-data-layer
-**Plan:** 1 of 2 complete
-**Status:** In progress
-**Progress:** [█████████░] 88%
+**Plan:** 2 of 2 complete
+**Status:** Complete
+**Progress:** [██████████] 100%
 
 ## Performance Metrics
 
-**Phases Completed:** 4/7 (57%)
-**Plans Completed:** 8 (01-01, 01-02, 02-01, 03-01, 03-02, 04-01, 05-01)
+**Phases Completed:** 5/7 (71%)
+**Plans Completed:** 8 (01-01, 01-02, 02-01, 03-01, 03-02, 04-01, 05-01, 05-02)
 **Tests Passed:** 0
 **Active Blockers:** 0
 
@@ -89,6 +89,10 @@ Roadmap created with 7 sequential phases. Ready to begin planning Phase 1 (CI/CD
 - [Phase 05]: PGDATA subdirectory /var/lib/postgresql/data/pgdata to avoid ext4 lost+found conflict
 - [Phase 05]: fsGroup 999 for both StatefulSets to match postgres and redis user UIDs in Alpine images
 - [Phase 05]: Redis AOF persistence with everysec fsync balances durability and performance
+| Phase 05-data-layer P02 | 18 | 2 tasks | 4 files |
+- [Phase 05-data-layer]: 6-hour backup schedule balances RPO with storage costs
+- [Phase 05-data-layer]: Workload Identity eliminates long-lived service account keys for GCS authentication
+- [Phase 05-data-layer]: 30-day retention policy (120 backups) via automated cleanup script in CronJob
 
 ### Open Questions
 
@@ -128,7 +132,7 @@ Roadmap created with 7 sequential phases. Ready to begin planning Phase 1 (CI/CD
 | 2. Argo CD Integration | Complete | 7 | 7 | 1/1 |
 | 3. Foundation Resources | Complete | 6 | 6 | 2/2 |
 | 4. Storage Layer | Complete | 5 | 5 | 1/1 |
-| 5. Data Layer | In progress | 9 | 8 | 1/2 |
+| 5. Data Layer | Complete | 9 | 8 | 2/2 |
 | 6. Application Layer | Not started | 16 | 10 | 0/? |
 | 7. External Access | Not started | 8 | 8 | 0/? |
 
@@ -137,10 +141,10 @@ Roadmap created with 7 sequential phases. Ready to begin planning Phase 1 (CI/CD
 ## Session Continuity
 
 **What just happened:**
-Completed Phase 05 Plan 01 (Data Layer StatefulSets and Services). Created Postgres StatefulSet (70387918, 0e55acac): postgres:15-alpine with PVC mount to postgres-data, 500m/1Gi requests and 2/4Gi limits, pg_isready health probes with 30s/60s delays, PGDATA subdirectory, and fsGroup 999. Created Redis StatefulSet (1ee0a8f7): redis:7-alpine with PVC mount to redis-data, AOF persistence enabled, 200m/512Mi requests and 1/2Gi limits, redis-cli ping probes. Created ClusterIP Services for postgres (port 5432) and redis (port 6379). Fixed validation script arithmetic bug (6c3c3833). Updated kustomization.yaml to include all 4 resources. Phase 05 Plan 01 complete (1/2 plans done).
+Completed Phase 05 Plan 02 (Postgres Backup CronJob with Cloud Storage Integration). Created backup-serviceaccount.yaml (cc8f2a56) with Workload Identity annotation for firecrawl-backup@prometheus-461323.iam.gserviceaccount.com. Created backup-cronjob.yaml with schedule "0 */6 * * *" that runs pg_dump, compresses with gzip, uploads to gs://firecrawl-backups/postgres/, and cleans up backups older than 30 days. Created comprehensive restoration runbook (ead4dd6f) with 8-step recovery procedure, manual trigger command, quarterly testing procedure, and troubleshooting section. Updated kustomization.yaml to include both backup resources. Phase 05 Data Layer complete (2/2 plans done).
 
 **What's next:**
-Phase 05 Plan 02 (Postgres Backup CronJob with Cloud Storage Integration). Create backup-serviceaccount.yaml with Workload Identity, backup-cronjob.yaml with 6-hour schedule, pg_dump to GCS bucket.
+Phase 06 (Application Layer) - Deploy firecrawl-api, ingestion-ui, and worker deployments with proper resource limits and health checks.
 
 **If context was lost:**
 Read this STATE.md for current position. Read ROADMAP.md for phase structure. Read PROJECT.md for core value and constraints. Read REQUIREMENTS.md for detailed requirements. Start with `/gsd:plan-phase 1`.
