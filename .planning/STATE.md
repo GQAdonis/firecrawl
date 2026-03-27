@@ -35,14 +35,14 @@ Roadmap created with 7 sequential phases. Ready to begin planning Phase 1 (CI/CD
 ## Current Position
 
 **Phase:** 03-foundation-resources
-**Plan:** 1 of ? complete
-**Status:** Planning in progress
-**Progress:** [████░░░░░░] 40%
+**Plan:** 2 of 2 complete
+**Status:** Phase complete
+**Progress:** [██████████] 100%
 
 ## Performance Metrics
 
-**Phases Completed:** 2/7 (29%)
-**Plans Completed:** 4 (01-01, 01-02, 02-01, 03-01)
+**Phases Completed:** 3/7 (43%)
+**Plans Completed:** 6 (01-01, 01-02, 02-01, 03-01, 03-02)
 **Tests Passed:** 0
 **Active Blockers:** 0
 
@@ -75,6 +75,10 @@ Roadmap created with 7 sequential phases. Ready to begin planning Phase 1 (CI/CD
 - [Phase 03]: LimitRange defaults: 1 CPU, 2Gi memory per container; max 4 CPU, 8Gi per container
 - [Phase 03]: ServiceAccount token automount: true for api and worker (ConfigMap access), false for ui and playwright (no K8s API needed)
 - [Phase 03]: RBAC: Single Role with read-only ConfigMap permissions, bound only to api and worker ServiceAccounts
+| Phase 03 P02 | 138 | 2 tasks | 5 files |
+- [Phase 03]: Structured ConfigMaps by concern (database, redis, application) instead of monolithic ConfigMap for partial updates and clearer ownership
+- [Phase 03]: Manual kubectl secret creation with documented runbook instead of encrypted GitOps secrets for v1 simplicity
+- [Phase 03]: Kubernetes internal DNS for service hostnames ({service}.{namespace}.svc.cluster.local) for standard K8s service discovery
 
 ### Open Questions
 
@@ -112,7 +116,7 @@ Roadmap created with 7 sequential phases. Ready to begin planning Phase 1 (CI/CD
 |-------|--------|--------------|------------------|-------|
 | 1. CI/CD Pipeline Foundation | Complete | 8 | 8 | 2/2 |
 | 2. Argo CD Integration | Complete | 7 | 7 | 1/1 |
-| 3. Foundation Resources | Not started | 6 | 6 | 0/? |
+| 3. Foundation Resources | Complete | 6 | 6 | 2/2 |
 | 4. Storage Layer | Not started | 5 | 5 | 0/? |
 | 5. Data Layer | Not started | 9 | 8 | 0/? |
 | 6. Application Layer | Not started | 16 | 10 | 0/? |
@@ -123,10 +127,10 @@ Roadmap created with 7 sequential phases. Ready to begin planning Phase 1 (CI/CD
 ## Session Continuity
 
 **What just happened:**
-Completed Phase 03 Plan 01 (Foundation Resources). Created firecrawl namespace (eddfc78e) with ResourceQuota (10 CPU, 20Gi memory, 50 pods) and LimitRange (1 CPU, 2Gi memory defaults). Created 4 ServiceAccounts (99dbf0d2): firecrawl-api, firecrawl-worker (automountServiceAccountToken: true), firecrawl-ui, firecrawl-playwright (automountServiceAccountToken: false). Established RBAC with read-only ConfigMap access for api and worker only. Updated kustomization.yaml to include all foundation resources. Kustomize validation passes.
+Completed Phase 03 Plan 02 (Configuration Resources). Created 3 structured ConfigMaps (19e75a64): configmap-database.yaml with Postgres connection config, configmap-redis.yaml with Redis URLs, configmap-application.yaml with runtime settings. All service hostnames use K8s internal DNS format (*.firecrawl.svc.cluster.local). Created secrets-README.md (b5099a4b) documenting manual kubectl secret creation for firecrawl-database-secret (POSTGRES_USER, POSTGRES_PASSWORD) and firecrawl-api-secrets (OPENAI_API_KEY, SUPABASE tokens, BULL_AUTH_KEY). Updated kustomization.yaml to include all ConfigMap resources. No actual secret values committed. Phase 03 complete (2/2 plans done).
 
 **What's next:**
-Continue Phase 03: Plan next resources (ConfigMaps, Secrets documentation) or verify current plan with `/gsd:verify-work`. After Phase 03 completes, proceed to Phase 04 (Storage Layer).
+Phase 03 (Foundation Resources) complete. Proceed to Phase 04 (Storage Layer) with `/gsd:plan-phase 4` or review phase with `/gsd:verify-work`.
 
 **If context was lost:**
 Read this STATE.md for current position. Read ROADMAP.md for phase structure. Read PROJECT.md for core value and constraints. Read REQUIREMENTS.md for detailed requirements. Start with `/gsd:plan-phase 1`.

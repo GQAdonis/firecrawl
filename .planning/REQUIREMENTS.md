@@ -33,9 +33,9 @@ Requirements for GitOps deployment automation to GKE client-cluster.
 - [x] **FOUND-01**: firecrawl namespace created with resource quotas
 - [x] **FOUND-02**: ServiceAccounts created for application pods
 - [x] **FOUND-03**: RBAC roles configured for service accounts
-- [ ] **FOUND-04**: ConfigMaps created for application configuration
-- [ ] **FOUND-05**: Secrets created manually via kubectl (not committed to Git)
-- [ ] **FOUND-06**: Required secrets include database passwords and API keys
+- [x] **FOUND-04**: ConfigMaps created for application configuration
+- [x] **FOUND-05**: Secrets created manually via kubectl (not committed to Git)
+- [x] **FOUND-06**: Required secrets include database passwords and API keys
 
 ### Storage
 
@@ -148,9 +148,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | FOUND-01 | Phase 3 | Complete |
 | FOUND-02 | Phase 3 | Complete |
 | FOUND-03 | Phase 3 | Complete |
-| FOUND-04 | Phase 3 | Pending |
-| FOUND-05 | Phase 3 | Pending |
-| FOUND-06 | Phase 3 | Pending |
+| FOUND-04 | Phase 3 | Complete |
+| FOUND-05 | Phase 3 | Complete |
+| FOUND-06 | Phase 3 | Complete |
 | STOR-01 | Phase 4 | Pending |
 | STOR-02 | Phase 4 | Pending |
 | STOR-03 | Phase 4 | Pending |

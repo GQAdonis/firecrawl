@@ -29,7 +29,7 @@ This roadmap delivers a production-ready GitOps deployment pipeline for Firecraw
 |-------|----------------|--------|-----------|
 | 1. CI/CD Pipeline Foundation | 2/2 | Complete    | 2026-03-27 |
 | 2. Argo CD Integration | 1/1 | Complete    | 2026-03-27 |
-| 3. Foundation Resources | 1/2 | In progress | - |
+| 3. Foundation Resources | 2/2 | Complete    | 2026-03-27 |
 | 4. Storage Layer | 0/? | Not started | - |
 | 5. Data Layer | 0/? | Not started | - |
 | 6. Application Layer | 0/? | Not started | - |
