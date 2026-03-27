@@ -8,6 +8,9 @@ resources:
   - configmap-database.yaml
   - configmap-redis.yaml
   - configmap-application.yaml
+  - storage-class-immediate.yaml
+  - pvc-postgres.yaml
+  - pvc-redis.yaml
   - api-deployment.yaml
   - ui-deployment.yaml
 
