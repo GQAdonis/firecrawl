@@ -8,7 +8,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/mendableai/firecrawl.git
+    repoURL: https://github.com/GQAdonis/firecrawl.git
     targetRevision: main
     path: k8s/base
   destination:
