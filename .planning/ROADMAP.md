@@ -32,7 +32,7 @@ This roadmap delivers a production-ready GitOps deployment pipeline for Firecraw
 | 3. Foundation Resources | 2/2 | Complete    | 2026-03-27 |
 | 4. Storage Layer | 1/1 | Complete    | 2026-03-27 |
 | 5. Data Layer | 1/2 | Complete    | 2026-03-27 |
-| 6. Application Layer | 0/? | Not started | - |
+| 6. Application Layer | 0/3 | Planning | - |
 | 7. External Access | 0/? | Not started | - |
 
 ## Phase Details
@@ -189,9 +189,14 @@ Plans:
 9. Kubernetes Services exist for all application components
 10. Application pods can process requests without crashing
 
-**Plans:** TBD
+**Plans:** 3 plans
 
-**Research Note:** Needs validation. BullMQ worker configuration, Redis connection pool sizing, and resource limit tuning require load testing.
+Plans:
+- [ ] 06-01-PLAN.md -- API Deployment with init containers, probes, resource limits, and ClusterIP Service
+- [ ] 06-02-PLAN.md -- Worker Deployments (extract, nuq, prefetch) with resource profiles and heap tuning
+- [ ] 06-03-PLAN.md -- UI and Playwright Deployments with Services, kustomization.yaml update
+
+**Research Note:** Researched. Node.js heap tuning (85% rule), init containers with busybox nc, separate worker Deployments per type, conservative resource limits.
 
 ---
 
