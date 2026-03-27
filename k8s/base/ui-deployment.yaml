@@ -1,0 +1,22 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ingestion-ui
+  namespace: firecrawl
+  labels:
+    app: ingestion-ui
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ingestion-ui
+  template:
+    metadata:
+      labels:
+        app: ingestion-ui
+    spec:
+      containers:
+        - name: ingestion-ui
+          image: ingestion-ui
+          ports:
+            - containerPort: 80

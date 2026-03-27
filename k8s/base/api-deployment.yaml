@@ -1,0 +1,22 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: firecrawl-api
+  namespace: firecrawl
+  labels:
+    app: firecrawl-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: firecrawl-api
+  template:
+    metadata:
+      labels:
+        app: firecrawl-api
+    spec:
+      containers:
+        - name: firecrawl-api
+          image: firecrawl-api
+          ports:
+            - containerPort: 8080
