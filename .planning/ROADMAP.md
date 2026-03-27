@@ -30,7 +30,7 @@ This roadmap delivers a production-ready GitOps deployment pipeline for Firecraw
 | 1. CI/CD Pipeline Foundation | 2/2 | Complete    | 2026-03-27 |
 | 2. Argo CD Integration | 1/1 | Complete    | 2026-03-27 |
 | 3. Foundation Resources | 2/2 | Complete    | 2026-03-27 |
-| 4. Storage Layer | 0/? | Not started | - |
+| 4. Storage Layer | 0/1 | Planning | - |
 | 5. Data Layer | 0/? | Not started | - |
 | 6. Application Layer | 0/? | Not started | - |
 | 7. External Access | 0/? | Not started | - |
@@ -132,9 +132,12 @@ Plans:
 4. PersistentVolume reclaim policy is set to Retain
 5. Volume topology is validated against node zones
 
-**Plans:** TBD
+**Plans:** 1 plan
 
-**Research Note:** Needs validation. GKE-specific storage class configuration requires verification against client-cluster setup.
+Plans:
+- [ ] 04-01-PLAN.md -- Custom StorageClass with immediate binding + Postgres/Redis PVCs
+
+**Research Note:** Researched. Custom StorageClass required because GKE defaults use WaitForFirstConsumer. Zone topology must be validated against cluster nodes.
 
 ---
 
