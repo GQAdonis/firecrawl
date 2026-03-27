@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-data
+  namespace: firecrawl
+  labels:
+    app: postgres
+    component: database
+    managed-by: argocd
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: standard-immediate
+  resources:
+    requests:
+      storage: 10Gi

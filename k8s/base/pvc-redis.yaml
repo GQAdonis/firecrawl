@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: redis-data
+  namespace: firecrawl
+  labels:
+    app: redis
+    component: cache
+    managed-by: argocd
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: standard-immediate
+  resources:
+    requests:
+      storage: 1Gi
