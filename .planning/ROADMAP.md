@@ -16,7 +16,7 @@ This roadmap delivers a production-ready GitOps deployment pipeline for Firecraw
 ## Phases
 
 - [x] **Phase 1: CI/CD Pipeline Foundation** - Automated image builds and manifest updates (completed 2026-03-27)
-- [ ] **Phase 2: Argo CD Integration** - GitOps continuous deployment setup
+- [x] **Phase 2: Argo CD Integration** - GitOps continuous deployment setup (completed 2026-03-27)
 - [ ] **Phase 3: Foundation Resources** - Namespace, RBAC, ConfigMaps, Secrets
 - [ ] **Phase 4: Storage Layer** - Persistent volumes for stateful services
 - [ ] **Phase 5: Data Layer** - Postgres and Redis StatefulSets with backups
@@ -28,7 +28,7 @@ This roadmap delivers a production-ready GitOps deployment pipeline for Firecraw
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. CI/CD Pipeline Foundation | 2/2 | Complete    | 2026-03-27 |
-| 2. Argo CD Integration | 0/1 | Planned | - |
+| 2. Argo CD Integration | 1/1 | Complete   | 2026-03-27 |
 | 3. Foundation Resources | 0/? | Not started | - |
 | 4. Storage Layer | 0/? | Not started | - |
 | 5. Data Layer | 0/? | Not started | - |
@@ -82,7 +82,7 @@ Plans:
 6. Deployment status is visible in Argo CD dashboard
 7. Rollback is possible via git revert + Argo CD sync
 
-**Plans:** 1 plan
+**Plans:** 1/1 plans complete
 
 Plans:
 - [ ] 02-01-PLAN.md -- Argo CD Application manifest with automated sync, prune, and self-heal

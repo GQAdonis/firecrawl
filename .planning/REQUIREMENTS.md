@@ -20,13 +20,13 @@ Requirements for GitOps deployment automation to GKE client-cluster.
 
 ### GitOps Automation
 
-- [ ] **GITOPS-01**: Argo CD Application manifest points to firecrawl k8s/ directory
-- [ ] **GITOPS-02**: Argo CD automatically syncs manifest changes to cluster
-- [ ] **GITOPS-03**: Argo CD prunes deleted resources automatically
-- [ ] **GITOPS-04**: Argo CD self-heals manual cluster changes
-- [ ] **GITOPS-05**: Argo CD monitors health of all deployed resources
-- [ ] **GITOPS-06**: Deployment status visible in Argo CD dashboard
-- [ ] **GITOPS-07**: Rollback possible via git revert + Argo CD sync
+- [x] **GITOPS-01**: Argo CD Application manifest points to firecrawl k8s/ directory
+- [x] **GITOPS-02**: Argo CD automatically syncs manifest changes to cluster
+- [x] **GITOPS-03**: Argo CD prunes deleted resources automatically
+- [x] **GITOPS-04**: Argo CD self-heals manual cluster changes
+- [x] **GITOPS-05**: Argo CD monitors health of all deployed resources
+- [x] **GITOPS-06**: Deployment status visible in Argo CD dashboard
+- [x] **GITOPS-07**: Rollback possible via git revert + Argo CD sync
 
 ### Foundation
 
@@ -138,13 +138,13 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CI-06 | Phase 1 | Complete |
 | CI-07 | Phase 1 | Complete |
 | CI-08 | Phase 1 | Complete |
-| GITOPS-01 | Phase 2 | Pending |
-| GITOPS-02 | Phase 2 | Pending |
-| GITOPS-03 | Phase 2 | Pending |
-| GITOPS-04 | Phase 2 | Pending |
-| GITOPS-05 | Phase 2 | Pending |
-| GITOPS-06 | Phase 2 | Pending |
-| GITOPS-07 | Phase 2 | Pending |
+| GITOPS-01 | Phase 2 | Complete |
+| GITOPS-02 | Phase 2 | Complete |
+| GITOPS-03 | Phase 2 | Complete |
+| GITOPS-04 | Phase 2 | Complete |
+| GITOPS-05 | Phase 2 | Complete |
+| GITOPS-06 | Phase 2 | Complete |
+| GITOPS-07 | Phase 2 | Complete |
 | FOUND-01 | Phase 3 | Pending |
 | FOUND-02 | Phase 3 | Pending |
 | FOUND-03 | Phase 3 | Pending |
