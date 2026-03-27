@@ -17,7 +17,7 @@ This roadmap delivers a production-ready GitOps deployment pipeline for Firecraw
 
 - [x] **Phase 1: CI/CD Pipeline Foundation** - Automated image builds and manifest updates (completed 2026-03-27)
 - [x] **Phase 2: Argo CD Integration** - GitOps continuous deployment setup (completed 2026-03-27)
-- [ ] **Phase 3: Foundation Resources** - Namespace, RBAC, ConfigMaps, Secrets
+- [x] **Phase 3: Foundation Resources** - Namespace, RBAC, ConfigMaps, Secrets (completed 2026-03-27)
 - [ ] **Phase 4: Storage Layer** - Persistent volumes for stateful services
 - [ ] **Phase 5: Data Layer** - Postgres and Redis StatefulSets with backups
 - [ ] **Phase 6: Application Layer** - API, Workers, UI, and Playwright deployments
@@ -107,7 +107,7 @@ Plans:
 5. Secrets are created manually via kubectl (not committed to Git)
 6. All required secrets exist including database passwords and API keys
 
-**Plans:** 2 plans
+**Plans:** 2/2 plans complete
 
 Plans:
 - [ ] 03-01-PLAN.md -- Namespace with ResourceQuota/LimitRange, ServiceAccounts, and RBAC
