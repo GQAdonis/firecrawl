@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: firecrawl-application
+  namespace: firecrawl
+  labels:
+    app: firecrawl
+    config-type: application
+data:
+  HOST: "0.0.0.0"
+  PORT: "3002"
+  NUM_WORKERS_PER_QUEUE: "8"
+  CRAWL_CONCURRENT_REQUESTS: "10"
+  MAX_CONCURRENT_JOBS: "5"
+  BROWSER_POOL_SIZE: "5"
+  LOGGING_LEVEL: "INFO"
+  PLAYWRIGHT_MICROSERVICE_URL: "http://playwright-service.firecrawl.svc.cluster.local:3000/scrape"
