@@ -27,7 +27,7 @@ This roadmap delivers a production-ready GitOps deployment pipeline for Firecraw
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. CI/CD Pipeline Foundation | 0/? | Not started | - |
+| 1. CI/CD Pipeline Foundation | 0/2 | Planning complete | - |
 | 2. Argo CD Integration | 0/? | Not started | - |
 | 3. Foundation Resources | 0/? | Not started | - |
 | 4. Storage Layer | 0/? | Not started | - |
@@ -55,7 +55,11 @@ This roadmap delivers a production-ready GitOps deployment pipeline for Firecraw
 7. Manifest changes are committed back to main with [skip ci] to prevent loops
 8. Workflow authenticates to GCP using Workload Identity Federation (no long-lived keys)
 
-**Plans:** TBD
+**Plans:** 2 plans
+
+Plans:
+- [ ] 01-01-PLAN.md -- Foundation files: ingestion-ui Dockerfile + k8s/base Kustomize structure
+- [ ] 01-02-PLAN.md -- GitHub Actions CI workflow with WIF auth and manifest updates
 
 **Research Note:** Standard patterns, skip phase research. GitHub Actions + GCR integration is well-documented.
 
@@ -205,17 +209,17 @@ This roadmap delivers a production-ready GitOps deployment pipeline for Firecraw
 
 ```
 Phase 1 (CI/CD Pipeline Foundation)
-  ↓
+  |
 Phase 2 (Argo CD Integration)
-  ↓
+  |
 Phase 3 (Foundation Resources)
-  ↓
+  |
 Phase 4 (Storage Layer)
-  ↓
+  |
 Phase 5 (Data Layer)
-  ↓
+  |
 Phase 6 (Application Layer)
-  ↓
+  |
 Phase 7 (External Access)
 ```
 
