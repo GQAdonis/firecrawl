@@ -31,7 +31,7 @@ This roadmap delivers a production-ready GitOps deployment pipeline for Firecraw
 | 2. Argo CD Integration | 1/1 | Complete    | 2026-03-27 |
 | 3. Foundation Resources | 2/2 | Complete    | 2026-03-27 |
 | 4. Storage Layer | 1/1 | Complete    | 2026-03-27 |
-| 5. Data Layer | 0/? | Not started | - |
+| 5. Data Layer | 0/2 | Planning complete | - |
 | 6. Application Layer | 0/? | Not started | - |
 | 7. External Access | 0/? | Not started | - |
 
@@ -159,9 +159,13 @@ Plans:
 7. Backup restoration procedure is documented
 8. Application pods can connect to Postgres and Redis using service DNS names
 
-**Plans:** TBD
+**Plans:** 2 plans
 
-**Research Note:** Standard patterns, skip phase research. StatefulSet + Service configuration is well-documented.
+Plans:
+- [ ] 05-01-PLAN.md -- Postgres and Redis StatefulSets with Services and health probes
+- [ ] 05-02-PLAN.md -- Postgres backup CronJob to GCS and restoration runbook
+
+**Research Note:** Researched. StatefulSet with pre-existing PVC mount, exec probes, AOF persistence for Redis, CronJob with Workload Identity for GCS backups.
 
 ---
 
