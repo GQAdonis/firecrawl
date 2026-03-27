@@ -34,15 +34,15 @@ Roadmap created with 7 sequential phases. Ready to begin planning Phase 1 (CI/CD
 
 ## Current Position
 
-**Phase:** 02-argo-cd-integration
-**Plan:** 1 of 1 complete
-**Status:** Ready to plan
-**Progress:** [██████████] 100%
+**Phase:** 03-foundation-resources
+**Plan:** 1 of ? complete
+**Status:** Planning in progress
+**Progress:** [████░░░░░░] 40%
 
 ## Performance Metrics
 
 **Phases Completed:** 2/7 (29%)
-**Plans Completed:** 3 (01-01, 01-02, 02-01)
+**Plans Completed:** 4 (01-01, 01-02, 02-01, 03-01)
 **Tests Passed:** 0
 **Active Blockers:** 0
 
@@ -70,6 +70,11 @@ Roadmap created with 7 sequential phases. Ready to begin planning Phase 1 (CI/CD
 - [Phase 02]: Use GQAdonis/firecrawl fork repository URL instead of mendableai/firecrawl for Argo CD Application source
 - [Phase 02]: Automated sync with prune and self-heal enabled for fully automated GitOps workflow
 - [Phase 02]: CreateNamespace=false - Phase 3 will create namespace with proper RBAC and resource quotas
+| Phase 03 P01 | 89 | 2 tasks | 4 files |
+- [Phase 03]: ResourceQuota limits: 10 CPU requests, 20Gi memory requests, 40Gi memory limits, 50 pods
+- [Phase 03]: LimitRange defaults: 1 CPU, 2Gi memory per container; max 4 CPU, 8Gi per container
+- [Phase 03]: ServiceAccount token automount: true for api and worker (ConfigMap access), false for ui and playwright (no K8s API needed)
+- [Phase 03]: RBAC: Single Role with read-only ConfigMap permissions, bound only to api and worker ServiceAccounts
 
 ### Open Questions
 
@@ -118,10 +123,10 @@ Roadmap created with 7 sequential phases. Ready to begin planning Phase 1 (CI/CD
 ## Session Continuity
 
 **What just happened:**
-Completed Phase 02 (Argo CD Integration). Plan 02-01 created Argo CD Application manifest (03f49291, 05e2dfde) with automated sync, prune, and self-heal policies. Application points to k8s/base/ in fork repository. User verified Application deployment - shows OutOfSync status (expected until Phase 3 creates namespace). Phase 2 now complete with 1/1 plans executed.
+Completed Phase 03 Plan 01 (Foundation Resources). Created firecrawl namespace (eddfc78e) with ResourceQuota (10 CPU, 20Gi memory, 50 pods) and LimitRange (1 CPU, 2Gi memory defaults). Created 4 ServiceAccounts (99dbf0d2): firecrawl-api, firecrawl-worker (automountServiceAccountToken: true), firecrawl-ui, firecrawl-playwright (automountServiceAccountToken: false). Established RBAC with read-only ConfigMap access for api and worker only. Updated kustomization.yaml to include all foundation resources. Kustomize validation passes.
 
 **What's next:**
-Begin Phase 03 (Foundation Resources): Create firecrawl namespace with RBAC, resource quotas, network policies, and service accounts. Plan with `/gsd:plan-phase 3`.
+Continue Phase 03: Plan next resources (ConfigMaps, Secrets documentation) or verify current plan with `/gsd:verify-work`. After Phase 03 completes, proceed to Phase 04 (Storage Layer).
 
 **If context was lost:**
 Read this STATE.md for current position. Read ROADMAP.md for phase structure. Read PROJECT.md for core value and constraints. Read REQUIREMENTS.md for detailed requirements. Start with `/gsd:plan-phase 1`.
