@@ -119,16 +119,77 @@ Explicitly excluded from v1. Documented to prevent scope creep.
 | Mutable image tags (latest, main) | Non-deterministic deployments per research anti-patterns |
 | Secrets committed to Git | Security risk even if base64 per research anti-patterns |
 | Direct cluster access from CI | Violates GitOps separation per research architecture |
-
 ## Traceability
 
 Which phases cover which requirements. Updated during roadmap creation.
 
 **Coverage:**
 - v1 requirements: 61 total
-- Mapped to phases: (pending roadmap creation)
-- Unmapped: (pending roadmap creation)
+- Mapped to phases: 61/61 (100%)
+- Unmapped: 0
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| CI-01 | Phase 1 | Pending |
+| CI-02 | Phase 1 | Pending |
+| CI-03 | Phase 1 | Pending |
+| CI-04 | Phase 1 | Pending |
+| CI-05 | Phase 1 | Pending |
+| CI-06 | Phase 1 | Pending |
+| CI-07 | Phase 1 | Pending |
+| CI-08 | Phase 1 | Pending |
+| GITOPS-01 | Phase 2 | Pending |
+| GITOPS-02 | Phase 2 | Pending |
+| GITOPS-03 | Phase 2 | Pending |
+| GITOPS-04 | Phase 2 | Pending |
+| GITOPS-05 | Phase 2 | Pending |
+| GITOPS-06 | Phase 2 | Pending |
+| GITOPS-07 | Phase 2 | Pending |
+| FOUND-01 | Phase 3 | Pending |
+| FOUND-02 | Phase 3 | Pending |
+| FOUND-03 | Phase 3 | Pending |
+| FOUND-04 | Phase 3 | Pending |
+| FOUND-05 | Phase 3 | Pending |
+| FOUND-06 | Phase 3 | Pending |
+| STOR-01 | Phase 4 | Pending |
+| STOR-02 | Phase 4 | Pending |
+| STOR-03 | Phase 4 | Pending |
+| STOR-04 | Phase 4 | Pending |
+| STOR-05 | Phase 4 | Pending |
+| DATA-01 | Phase 5 | Pending |
+| DATA-02 | Phase 5 | Pending |
+| DATA-03 | Phase 5 | Pending |
+| DATA-04 | Phase 5 | Pending |
+| DATA-05 | Phase 5 | Pending |
+| DATA-06 | Phase 5 | Pending |
+| DATA-07 | Phase 5 | Pending |
+| DATA-08 | Phase 5 | Pending |
+| DATA-09 | Phase 5 | Pending |
+| APP-01 | Phase 6 | Pending |
+| APP-02 | Phase 6 | Pending |
+| APP-03 | Phase 6 | Pending |
+| APP-04 | Phase 6 | Pending |
+| APP-05 | Phase 6 | Pending |
+| APP-06 | Phase 6 | Pending |
+| APP-07 | Phase 6 | Pending |
+| APP-08 | Phase 6 | Pending |
+| APP-09 | Phase 6 | Pending |
+| APP-10 | Phase 6 | Pending |
+| APP-11 | Phase 6 | Pending |
+| APP-12 | Phase 6 | Pending |
+| APP-13 | Phase 6 | Pending |
+| APP-14 | Phase 6 | Pending |
+| APP-15 | Phase 6 | Pending |
+| APP-16 | Phase 6 | Pending |
+| ROUTE-01 | Phase 7 | Pending |
+| ROUTE-02 | Phase 7 | Pending |
+| ROUTE-03 | Phase 7 | Pending |
+| ROUTE-04 | Phase 7 | Pending |
+| ROUTE-05 | Phase 7 | Pending |
+| ROUTE-06 | Phase 7 | Pending |
+| ROUTE-07 | Phase 7 | Pending |
+| ROUTE-08 | Phase 7 | Pending |
 
 ---
 *Requirements defined: 2026-03-27*
-*Last updated: 2026-03-27 after research synthesis*
+*Last updated: 2026-03-27 after roadmap creation*
