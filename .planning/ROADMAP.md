@@ -29,7 +29,7 @@ This roadmap delivers a production-ready GitOps deployment pipeline for Firecraw
 |-------|----------------|--------|-----------|
 | 1. CI/CD Pipeline Foundation | 2/2 | Complete    | 2026-03-27 |
 | 2. Argo CD Integration | 1/1 | Complete    | 2026-03-27 |
-| 3. Foundation Resources | 0/? | Not started | - |
+| 3. Foundation Resources | 0/2 | Planning    | - |
 | 4. Storage Layer | 0/? | Not started | - |
 | 5. Data Layer | 0/? | Not started | - |
 | 6. Application Layer | 0/? | Not started | - |
@@ -107,7 +107,11 @@ Plans:
 5. Secrets are created manually via kubectl (not committed to Git)
 6. All required secrets exist including database passwords and API keys
 
-**Plans:** TBD
+**Plans:** 2 plans
+
+Plans:
+- [ ] 03-01-PLAN.md -- Namespace with ResourceQuota/LimitRange, ServiceAccounts, and RBAC
+- [ ] 03-02-PLAN.md -- Structured ConfigMaps and secrets creation runbook
 
 **Research Note:** Standard patterns, skip phase research. Basic Kubernetes resources.
 
