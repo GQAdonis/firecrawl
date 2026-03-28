@@ -1,8 +1,8 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-resources:
   # Phase 6: Application Layer
+resources:
 - namespace.yaml
 - serviceaccounts.yaml
 - rbac.yaml
@@ -32,7 +32,7 @@ images:
   newTag: initial
 - name: ingestion-ui
   newName: gcr.io/prometheus-461323/ingestion-ui
-  newTag: 509b1ff
+  newTag: 4482b16
 - name: playwright
   newName: gcr.io/prometheus-461323/playwright-service
   newTag: initial
