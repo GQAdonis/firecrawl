@@ -1,38 +1,38 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-resources:
-  - namespace.yaml
-  - serviceaccounts.yaml
-  - rbac.yaml
-  - configmap-database.yaml
-  - configmap-redis.yaml
-  - configmap-application.yaml
-  - storage-class-immediate.yaml
-  - pvc-postgres.yaml
-  - pvc-redis.yaml
-  - postgres-statefulset.yaml
-  - postgres-service.yaml
-  - redis-statefulset.yaml
-  - redis-service.yaml
-  - backup-serviceaccount.yaml
-  - backup-cronjob.yaml
   # Phase 6: Application Layer
-  - api-deployment.yaml
-  - worker-extract-deployment.yaml
-  - worker-nuq-deployment.yaml
-  - worker-prefetch-deployment.yaml
-  - ui-deployment.yaml
-  - playwright-deployment.yaml
-  - services.yaml
+resources:
+- namespace.yaml
+- serviceaccounts.yaml
+- rbac.yaml
+- configmap-database.yaml
+- configmap-redis.yaml
+- configmap-application.yaml
+- storage-class-immediate.yaml
+- pvc-postgres.yaml
+- pvc-redis.yaml
+- postgres-statefulset.yaml
+- postgres-service.yaml
+- redis-statefulset.yaml
+- redis-service.yaml
+- backup-serviceaccount.yaml
+- backup-cronjob.yaml
+- api-deployment.yaml
+- worker-extract-deployment.yaml
+- worker-nuq-deployment.yaml
+- worker-prefetch-deployment.yaml
+- ui-deployment.yaml
+- playwright-deployment.yaml
+- services.yaml
 
 images:
-  - name: firecrawl-api
-    newName: gcr.io/prometheus-461323/firecrawl-api
-    newTag: "initial"
-  - name: ingestion-ui
-    newName: gcr.io/prometheus-461323/ingestion-ui
-    newTag: "initial"
-  - name: playwright
-    newName: gcr.io/prometheus-461323/playwright-service
-    newTag: "initial"
+- name: firecrawl-api
+  newName: gcr.io/prometheus-461323/firecrawl-api
+  newTag: initial
+- name: ingestion-ui
+  newName: gcr.io/prometheus-461323/ingestion-ui
+  newTag: 509b1ff
+- name: playwright
+  newName: gcr.io/prometheus-461323/playwright-service
+  newTag: initial
