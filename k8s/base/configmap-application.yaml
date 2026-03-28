@@ -17,3 +17,5 @@ data:
   PLAYWRIGHT_MICROSERVICE_URL: "http://playwright-service.firecrawl.svc.cluster.local:3000/scrape"
   DISABLE_BLOCKLIST: "true"
   NUQ_RABBITMQ_URL: "amqp://firecrawl:firecrawl123@rabbitmq-service.firecrawl.svc.cluster.local:5672"
+  NUQ_DATABASE_URL: "postgresql://postgres:xC5ShQdLCHo4riQJ@db.ntsxlmroqdyfjcjxucux.supabase.co:5432/postgres"
+  NUQ_DATABASE_URL_LISTEN: "postgresql://postgres:xC5ShQdLCHo4riQJ@db.ntsxlmroqdyfjcjxucux.supabase.co:5432/postgres"
