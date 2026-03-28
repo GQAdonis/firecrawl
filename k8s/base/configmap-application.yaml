@@ -15,3 +15,4 @@ data:
   BROWSER_POOL_SIZE: "5"
   LOGGING_LEVEL: "INFO"
   PLAYWRIGHT_MICROSERVICE_URL: "http://playwright-service.firecrawl.svc.cluster.local:3000/scrape"
+  DISABLE_BLOCKLIST: "true"
