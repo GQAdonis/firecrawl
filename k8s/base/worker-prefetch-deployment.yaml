@@ -36,6 +36,7 @@ spec:
       containers:
         - name: worker-prefetch
           image: firecrawl-api
+          command: ["node", "dist/src/services/worker/nuq-prefetch-worker.js"]
           env:
             # Worker type configuration
             - name: WORKER_TYPE

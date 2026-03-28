@@ -38,4 +38,4 @@ images:
   newTag: 4482b16
 - name: playwright
   newName: gcr.io/prometheus-461323/playwright-service
-  newTag: initial
+  newTag: 4482b16

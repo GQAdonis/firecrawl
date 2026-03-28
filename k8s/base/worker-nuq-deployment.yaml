@@ -36,6 +36,7 @@ spec:
       containers:
         - name: worker-nuq
           image: firecrawl-api
+          command: ["node", "dist/src/services/worker/nuq-worker.js"]
           env:
             # Worker type configuration
             - name: WORKER_TYPE

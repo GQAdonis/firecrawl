@@ -36,6 +36,7 @@ spec:
       containers:
         - name: worker-extract
           image: firecrawl-api
+          command: ["node", "dist/src/services/extract-worker.js"]
           env:
             # Worker type configuration
             - name: WORKER_TYPE

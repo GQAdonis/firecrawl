@@ -7,6 +7,7 @@ on:
     paths:
       - 'apps/api/**'
       - 'apps/ui/ingestion-ui/**'
+      - 'apps/playwright-service-ts/**'
       - '.github/workflows/ci-build-deploy.yml'
   workflow_dispatch:
 
@@ -33,6 +34,9 @@ jobs:
           - name: ingestion-ui
             context: ./apps/ui/ingestion-ui
             dockerfile: ./apps/ui/ingestion-ui/Dockerfile
+          - name: playwright-service
+            context: ./apps/playwright-service-ts
+            dockerfile: ./apps/playwright-service-ts/Dockerfile
 
     steps:
       - name: Checkout repository

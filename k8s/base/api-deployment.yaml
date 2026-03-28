@@ -34,6 +34,7 @@ spec:
       containers:
         - name: firecrawl-api
           image: firecrawl-api
+          command: ["node", "dist/src/index.js"]
           ports:
             - containerPort: 3002
               name: http
