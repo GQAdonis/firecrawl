@@ -17,8 +17,14 @@ resources:
   - redis-service.yaml
   - backup-serviceaccount.yaml
   - backup-cronjob.yaml
+  # Phase 6: Application Layer
   - api-deployment.yaml
+  - worker-extract-deployment.yaml
+  - worker-nuq-deployment.yaml
+  - worker-prefetch-deployment.yaml
   - ui-deployment.yaml
+  - playwright-deployment.yaml
+  - services.yaml
 
 images:
   - name: firecrawl-api
@@ -26,4 +32,7 @@ images:
     newTag: "initial"
   - name: ingestion-ui
     newName: gcr.io/prometheus-461323/ingestion-ui
+    newTag: "initial"
+  - name: playwright
+    newName: gcr.io/prometheus-461323/playwright-service
     newTag: "initial"

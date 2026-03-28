@@ -1,19 +1,21 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: firecrawl-api
+  name: worker-nuq
   namespace: firecrawl
   labels:
-    app: firecrawl-api
+    app: worker-nuq
+    worker-type: nuq
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: firecrawl-api
+      app: worker-nuq
   template:
     metadata:
       labels:
-        app: firecrawl-api
+        app: worker-nuq
+        worker-type: nuq
     spec:
       serviceAccountName: firecrawl-app
       initContainers:
@@ -32,12 +34,12 @@ spec:
             - '-c'
             - 'until nc -z redis-service.firecrawl.svc.cluster.local 6379; do echo "Waiting for Redis..."; sleep 2; done; echo "Redis is ready"'
       containers:
-        - name: firecrawl-api
+        - name: worker-nuq
           image: firecrawl-api
-          ports:
-            - containerPort: 3002
-              name: http
           env:
+            # Worker type configuration
+            - name: WORKER_TYPE
+              value: "nuq"
             # Node.js heap tuning: 85% of 2048 MiB = 1740 MiB
             - name: NODE_OPTIONS
               value: "--max-old-space-size=1740"
@@ -57,18 +59,12 @@ spec:
             limits:
               memory: "2Gi"
               cpu: "1000m"
-          readinessProbe:
-            httpGet:
-              path: /health
-              port: 3002
-            initialDelaySeconds: 15
-            periodSeconds: 10
-            timeoutSeconds: 5
-            failureThreshold: 3
           livenessProbe:
-            httpGet:
-              path: /health
-              port: 3002
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - pgrep -f node || exit 1
             initialDelaySeconds: 30
             periodSeconds: 30
             timeoutSeconds: 5

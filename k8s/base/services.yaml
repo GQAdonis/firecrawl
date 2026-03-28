@@ -1,0 +1,51 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: firecrawl-api-service
+  namespace: firecrawl
+  labels:
+    app: firecrawl-api
+spec:
+  type: ClusterIP
+  selector:
+    app: firecrawl-api
+  ports:
+    - name: http
+      port: 3002
+      targetPort: 3002
+      protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ingestion-ui-service
+  namespace: firecrawl
+  labels:
+    app: ingestion-ui
+spec:
+  type: ClusterIP
+  selector:
+    app: ingestion-ui
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+      protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: playwright-service
+  namespace: firecrawl
+  labels:
+    app: playwright
+spec:
+  type: ClusterIP
+  selector:
+    app: playwright
+  ports:
+    - name: http
+      port: 3000
+      targetPort: 3000
+      protocol: TCP

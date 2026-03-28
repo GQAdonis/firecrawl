@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: playwright
+  namespace: firecrawl
+  labels:
+    app: playwright
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: playwright
+  template:
+    metadata:
+      labels:
+        app: playwright
+    spec:
+      serviceAccountName: firecrawl-app
+      containers:
+        - name: playwright
+          image: playwright
+          ports:
+            - containerPort: 3000
+              name: http
+          env:
+            - name: PORT
+              value: "3000"
+          resources:
+            requests:
+              memory: "1Gi"
+              cpu: "500m"
+            limits:
+              memory: "2Gi"
+              cpu: "1000m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
