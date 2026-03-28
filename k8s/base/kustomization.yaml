@@ -1,9 +1,8 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-  # Phase 6: Application Layer
-  # Phase 7: External Access
 resources:
+  # Phase 6: Application Layer
 - namespace.yaml
 - serviceaccounts.yaml
 - rbac.yaml
@@ -26,6 +25,7 @@ resources:
 - ui-deployment.yaml
 - playwright-deployment.yaml
 - services.yaml
+  # Phase 7: External Access
 - gateway.yaml
 - httproutes.yaml
 
