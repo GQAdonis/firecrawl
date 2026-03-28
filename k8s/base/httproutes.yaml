@@ -1,0 +1,100 @@
+---
+# HTTP to HTTPS redirect for API
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: firecrawl-api-http-redirect
+  namespace: firecrawl
+  labels:
+    app: firecrawl
+    component: api
+spec:
+  hostnames:
+    - firecrawl-api.prometheusags.ai
+  parentRefs:
+    - name: firecrawl-gateway
+      sectionName: http
+  rules:
+    - filters:
+        - type: RequestRedirect
+          requestRedirect:
+            scheme: https
+            statusCode: 301
+      matches:
+        - path:
+            type: PathPrefix
+            value: /
+---
+# HTTPS route for API
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: firecrawl-api-https
+  namespace: firecrawl
+  labels:
+    app: firecrawl
+    component: api
+spec:
+  hostnames:
+    - firecrawl-api.prometheusags.ai
+  parentRefs:
+    - name: firecrawl-gateway
+      sectionName: https
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: firecrawl-api-service
+          port: 3002
+---
+# HTTP to HTTPS redirect for UI
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: firecrawl-ui-http-redirect
+  namespace: firecrawl
+  labels:
+    app: firecrawl
+    component: ui
+spec:
+  hostnames:
+    - firecrawl.prometheusags.ai
+  parentRefs:
+    - name: firecrawl-gateway
+      sectionName: http
+  rules:
+    - filters:
+        - type: RequestRedirect
+          requestRedirect:
+            scheme: https
+            statusCode: 301
+      matches:
+        - path:
+            type: PathPrefix
+            value: /
+---
+# HTTPS route for UI
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: firecrawl-ui-https
+  namespace: firecrawl
+  labels:
+    app: firecrawl
+    component: ui
+spec:
+  hostnames:
+    - firecrawl.prometheusags.ai
+  parentRefs:
+    - name: firecrawl-gateway
+      sectionName: https
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: ingestion-ui-service
+          port: 80

@@ -25,6 +25,9 @@ resources:
 - ui-deployment.yaml
 - playwright-deployment.yaml
 - services.yaml
+  # Phase 7: External Access
+- gateway.yaml
+- httproutes.yaml
 
 images:
 - name: firecrawl-api
