@@ -35,7 +35,7 @@ images:
   newTag: 280d3fa
 - name: ingestion-ui
   newName: gcr.io/prometheus-461323/ingestion-ui
-  newTag: 4482b16
+  newTag: 280d3fa
 - name: playwright
   newName: gcr.io/prometheus-461323/playwright-service
   newTag: 4482b16
