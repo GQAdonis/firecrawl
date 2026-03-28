@@ -7,7 +7,7 @@ metadata:
     app: worker-prefetch
     worker-type: prefetch
 spec:
-  replicas: 0  # Disabled: has bug connecting to localhost:5432 instead of using POSTGRES_HOST
+  replicas: 1
   selector:
     matchLabels:
       app: worker-prefetch
