@@ -1,8 +1,9 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-resources:
   # Phase 6: Application Layer
+  # Phase 7: External Access
+resources:
 - namespace.yaml
 - serviceaccounts.yaml
 - rbac.yaml
@@ -25,14 +26,13 @@ resources:
 - ui-deployment.yaml
 - playwright-deployment.yaml
 - services.yaml
-  # Phase 7: External Access
 - gateway.yaml
 - httproutes.yaml
 
 images:
 - name: firecrawl-api
   newName: gcr.io/prometheus-461323/firecrawl-api
-  newTag: 4482b16
+  newTag: 280d3fa
 - name: ingestion-ui
   newName: gcr.io/prometheus-461323/ingestion-ui
   newTag: 4482b16
