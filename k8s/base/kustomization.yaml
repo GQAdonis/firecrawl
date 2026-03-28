@@ -32,7 +32,7 @@ resources:
 images:
 - name: firecrawl-api
   newName: gcr.io/prometheus-461323/firecrawl-api
-  newTag: 280d3fa
+  newTag: 00e68e6
 - name: ingestion-ui
   newName: gcr.io/prometheus-461323/ingestion-ui
   newTag: 00e68e6
