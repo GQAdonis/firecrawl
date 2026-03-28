@@ -17,7 +17,7 @@ spec:
         app: worker-extract
         worker-type: extract
     spec:
-      serviceAccountName: firecrawl-app
+      serviceAccountName: firecrawl-worker
       initContainers:
         # Wait for Postgres to be ready
         - name: wait-postgres

@@ -17,7 +17,7 @@ spec:
         app: worker-nuq
         worker-type: nuq
     spec:
-      serviceAccountName: firecrawl-app
+      serviceAccountName: firecrawl-worker
       initContainers:
         # Wait for Postgres to be ready
         - name: wait-postgres

@@ -15,7 +15,7 @@ spec:
       labels:
         app: ingestion-ui
     spec:
-      serviceAccountName: firecrawl-app
+      serviceAccountName: firecrawl-ui
       containers:
         - name: ingestion-ui
           image: ingestion-ui

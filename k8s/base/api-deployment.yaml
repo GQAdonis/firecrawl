@@ -15,7 +15,7 @@ spec:
       labels:
         app: firecrawl-api
     spec:
-      serviceAccountName: firecrawl-app
+      serviceAccountName: firecrawl-api
       initContainers:
         # Wait for Postgres to be ready
         - name: wait-postgres

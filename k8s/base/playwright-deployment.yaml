@@ -15,7 +15,7 @@ spec:
       labels:
         app: playwright
     spec:
-      serviceAccountName: firecrawl-app
+      serviceAccountName: firecrawl-playwright
       containers:
         - name: playwright
           image: playwright
