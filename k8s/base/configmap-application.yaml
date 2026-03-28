@@ -16,3 +16,4 @@ data:
   LOGGING_LEVEL: "INFO"
   PLAYWRIGHT_MICROSERVICE_URL: "http://playwright-service.firecrawl.svc.cluster.local:3000/scrape"
   DISABLE_BLOCKLIST: "true"
+  NUQ_RABBITMQ_URL: "amqp://firecrawl:firecrawl123@rabbitmq-service.firecrawl.svc.cluster.local:5672"

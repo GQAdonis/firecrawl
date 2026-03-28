@@ -33,6 +33,13 @@ spec:
             - 'sh'
             - '-c'
             - 'until nc -z redis-service.firecrawl.svc.cluster.local 6379; do echo "Waiting for Redis..."; sleep 2; done; echo "Redis is ready"'
+        # Wait for RabbitMQ to be ready
+        - name: wait-rabbitmq
+          image: busybox:1.36
+          command:
+            - 'sh'
+            - '-c'
+            - 'until nc -z rabbitmq-service.firecrawl.svc.cluster.local 5672; do echo "Waiting for RabbitMQ..."; sleep 2; done; echo "RabbitMQ is ready"'
       containers:
         - name: worker-prefetch
           image: firecrawl-api

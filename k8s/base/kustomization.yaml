@@ -16,6 +16,8 @@ resources:
 - postgres-service.yaml
 - redis-statefulset.yaml
 - redis-service.yaml
+- rabbitmq-statefulset.yaml
+- rabbitmq-service.yaml
 - backup-serviceaccount.yaml
 - backup-cronjob.yaml
 - api-deployment.yaml
