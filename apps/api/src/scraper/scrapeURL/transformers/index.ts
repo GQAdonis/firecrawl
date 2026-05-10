@@ -8,9 +8,9 @@ import { extractMetadata } from "../lib/extractMetadata";
 import {
   performLLMExtract,
   performSummary,
-  performQuery,
   performCleanContent,
 } from "./llmExtract";
+import { performQuery } from "./query";
 import { uploadScreenshot } from "./uploadScreenshot";
 import { removeBase64Images } from "./removeBase64Images";
 import { performAgent } from "./agent";
@@ -83,7 +83,7 @@ async function deriveMarkdownFromHTML(
   // - changeTracking requires markdown
   // - json format requires markdown (for LLM extraction)
   // - summary format requires markdown (for summarization)
-  // - query format requires markdown (for page-level answers)
+  // - question/highlights/query formats require markdown (for page-level answers)
   const hasMarkdown = hasFormatOfType(meta.options.formats, "markdown");
   const hasChangeTracking = hasFormatOfType(
     meta.options.formats,
@@ -91,12 +91,16 @@ async function deriveMarkdownFromHTML(
   );
   const hasJson = hasFormatOfType(meta.options.formats, "json");
   const hasSummary = hasFormatOfType(meta.options.formats, "summary");
+  const hasQuestion = hasFormatOfType(meta.options.formats, "question");
+  const hasHighlights = hasFormatOfType(meta.options.formats, "highlights");
   const hasQuery = hasFormatOfType(meta.options.formats, "query");
   if (
     !hasMarkdown &&
     !hasChangeTracking &&
     !hasJson &&
     !hasSummary &&
+    !hasQuestion &&
+    !hasHighlights &&
     !hasQuery &&
     !meta.options.onlyCleanContent
   ) {
@@ -128,6 +132,7 @@ async function deriveMarkdownFromHTML(
   document.markdown = await parseMarkdown(document.html, {
     logger: meta.logger,
     requestId,
+    zeroDataRetention: meta.internalOptions.zeroDataRetention,
   });
 
   if (
@@ -150,6 +155,7 @@ async function deriveMarkdownFromHTML(
     document.markdown = await parseMarkdown(document.html, {
       logger: meta.logger,
       requestId,
+      zeroDataRetention: meta.internalOptions.zeroDataRetention,
     });
 
     meta.logger.info("Fallback to full content extraction completed", {
@@ -178,6 +184,7 @@ async function deriveLinksFromHTML(
     rate > 0 && Math.random() <= rate && !!config.INDEXER_RABBITMQ_URL;
 
   const forwardToIndexer =
+    !meta.internalOptions.isParse &&
     !!meta.internalOptions.teamId &&
     !meta.internalOptions.teamId?.includes("robots-txt") &&
     !meta.internalOptions.teamId?.includes("sitemap") &&
@@ -314,7 +321,13 @@ function coerceFieldsToFormats(meta: Meta, document: Document): Document {
   const hasScreenshot = hasFormatOfType(meta.options.formats, "screenshot");
   const hasSummary = hasFormatOfType(meta.options.formats, "summary");
   const hasBranding = hasFormatOfType(meta.options.formats, "branding");
-  const hasQueryFormat = hasFormatOfType(meta.options.formats, "query");
+  const hasQuestionFormat = hasFormatOfType(meta.options.formats, "question");
+  const hasHighlightsFormat = hasFormatOfType(
+    meta.options.formats,
+    "highlights",
+  );
+  const hasLegacyQueryFormat = hasFormatOfType(meta.options.formats, "query");
+  const hasAnswerFormat = hasQuestionFormat || hasLegacyQueryFormat;
 
   if (!hasMarkdown && document.markdown !== undefined) {
     delete document.markdown;
@@ -429,14 +442,25 @@ function coerceFieldsToFormats(meta: Meta, document: Document): Document {
     );
   }
 
-  if (!hasQueryFormat && document.answer !== undefined) {
+  if (!hasAnswerFormat && document.answer !== undefined) {
     meta.logger.warn(
-      "Removed answer from Document because query wasn't in formats -- this is wasteful and indicates a bug.",
+      "Removed answer from Document because question/query wasn't in formats -- this is wasteful and indicates a bug.",
     );
     delete document.answer;
-  } else if (hasQueryFormat && document.answer === undefined) {
+  } else if (hasAnswerFormat && document.answer === undefined) {
     meta.logger.warn(
-      "Request had format query, but there was no answer field in the result.",
+      "Request had format question/query, but there was no answer field in the result.",
+    );
+  }
+
+  if (!hasHighlightsFormat && document.highlights !== undefined) {
+    meta.logger.warn(
+      "Removed highlights from Document because highlights wasn't in formats -- this is wasteful and indicates a bug.",
+    );
+    delete document.highlights;
+  } else if (hasHighlightsFormat && document.highlights === undefined) {
+    meta.logger.warn(
+      "Request had format highlights, but there was no highlights field in the result.",
     );
   }
 
@@ -531,10 +555,10 @@ const transformerStack: Transformer[] = [
   performQuery,
   performAttributes,
   performAgent,
+  removeBase64Images,
   deriveDiff,
   fetchAudio,
   coerceFieldsToFormats,
-  removeBase64Images,
 ];
 
 export async function executeTransformers(

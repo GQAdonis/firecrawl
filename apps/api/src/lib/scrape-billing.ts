@@ -14,6 +14,7 @@ import { isUrlBlocked } from "../scraper/WebScraper/utils/blocklist";
 const creditsPerPDFPage = 1;
 const stealthProxyCostBonus = 4;
 const unblockedDomainCostBonus = 4;
+const xTwitterCostBonus = 9;
 
 export async function calculateCreditsToBeBilled(
   options: ScrapeOptions,
@@ -41,7 +42,8 @@ export async function calculateCreditsToBeBilled(
     // Bill for DNS resolution errors
     if (
       error instanceof TransportableError &&
-      error.code === "SCRAPE_DNS_RESOLUTION_ERROR"
+      (error.code === "SCRAPE_DNS_RESOLUTION_ERROR" ||
+        error.code === "SCRAPE_LOCKDOWN_CACHE_MISS")
     ) {
       creditsToBeBilled = 1;
     }
@@ -50,6 +52,11 @@ export async function calculateCreditsToBeBilled(
   }
 
   let creditsToBeBilled = 1; // Assuming 1 credit per document
+
+  if (options.lockdown) {
+    creditsToBeBilled += 4;
+  }
+
   const changeTrackingFormat = hasFormatOfType(
     options.formats,
     "changeTracking",
@@ -68,7 +75,14 @@ export async function calculateCreditsToBeBilled(
     creditsToBeBilled = Math.ceil((costTrackingJSON.totalCost ?? 1) * 1800);
   }
 
-  if (hasFormatOfType(options.formats, "query")) {
+  const hasQuestionFormat =
+    hasFormatOfType(options.formats, "question") ||
+    hasFormatOfType(options.formats, "query");
+  if (hasQuestionFormat) {
+    creditsToBeBilled += 4;
+  }
+
+  if (hasFormatOfType(options.formats, "highlights")) {
     creditsToBeBilled += 4;
   }
 
@@ -76,7 +90,11 @@ export async function calculateCreditsToBeBilled(
     creditsToBeBilled += 4;
   }
 
-  if (internalOptions.zeroDataRetention) {
+  if (document.metadata?.postprocessorsUsed?.includes("x-twitter")) {
+    creditsToBeBilled += xTwitterCostBonus;
+  }
+
+  if (internalOptions.zeroDataRetention && !options.lockdown) {
     creditsToBeBilled += flags?.zdrCost ?? 1;
   }
 
