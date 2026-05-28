@@ -39,6 +39,7 @@ const configSchema = z.object({
   FIRECRAWL_DASHBOARD_URL: z.url().default("https://www.firecrawl.dev"),
   SUPPORT_AGENT_URL: z.string().url().optional(),
   SUPPORT_AGENT_VERCEL_BYPASS_SECRET: z.string().optional(),
+  RESEARCH_PROXY_URL: z.string().url().optional(),
 
   // Express
   EXPRESS_TRUST_PROXY: z.coerce.number().optional(),
@@ -52,10 +53,6 @@ const configSchema = z.object({
   LLAMAPARSE_API_KEY: z.string().optional(),
   STRIPE_SECRET_KEY: z.string().optional(),
   AUTUMN_SECRET_KEY: z.string().optional(),
-  AUTUMN_CHECK_ENABLED: z.string().optional(),
-  AUTUMN_CHECK_EXPERIMENT_PERCENT: z.coerce.number().default(100),
-  AUTUMN_EXPERIMENT: z.string().optional(),
-  AUTUMN_EXPERIMENT_PERCENT: z.coerce.number().default(100),
   AUTUMN_REQUEST_TRACK_EXPERIMENT: z.string().optional(),
   AUTUMN_REQUEST_TRACK_EXPERIMENT_PERCENT: z.coerce.number().default(100),
   RESEND_API_KEY: z.string().optional(),
