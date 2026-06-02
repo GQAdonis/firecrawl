@@ -70,6 +70,11 @@ const configSchema = z.object({
   OAUTH_INTROSPECT_URL: z.string().optional(),
   OAUTH_INTROSPECT_SECRET: z.string().optional(),
 
+  // Agent auth discovery (RFC 9728 WWW-Authenticate on 401)
+  AGENT_AUTH_RESOURCE_METADATA_URL: z
+    .url()
+    .default("https://www.firecrawl.dev/.well-known/oauth-protected-resource"),
+
   // Database & Storage
   POSTGRES_HOST: z.string().default("localhost"),
   POSTGRES_PORT: z.string().default("5432"),
@@ -278,6 +283,10 @@ const configSchema = z.object({
 
   // Audio (avgrab)
   AVGRAB_SERVICE_URL: z.string().optional(),
+
+  // PII Redaction (fire-privacy)
+  FIRE_PRIVACY_URL: z.string().optional(),
+  FIRE_PRIVACY_TIMEOUT_MS: z.coerce.number().int().positive().default(5000),
 
   NUQ_PREFETCH_WORKER_HEARTBEAT_URL: z.string().optional(),
 
