@@ -10,7 +10,7 @@ metadata:
 spec:
   accessModes:
     - ReadWriteOnce
-  storageClassName: standard-immediate
+  storageClassName: managed-immediate
   resources:
     requests:
       storage: 1Gi
