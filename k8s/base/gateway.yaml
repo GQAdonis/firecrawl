@@ -8,9 +8,21 @@ metadata:
 spec:
   gatewayClassName: eg
   listeners:
-    - name: http
+    # Host-specific listeners: a wildcard :80 listener conflicts with
+    # envoy-gateway-system/acme-http01-gateway (cert-manager HTTP-01 solver),
+    # which also needs the wildcard :80 tuple and breaks cluster-wide ACME
+    # validation when this one wins the conflict.
+    - name: http-api
       protocol: HTTP
       port: 80
+      hostname: firecrawl-api.prometheusags.ai
+      allowedRoutes:
+        namespaces:
+          from: Same
+    - name: http-ui
+      protocol: HTTP
+      port: 80
+      hostname: firecrawl.prometheusags.ai
       allowedRoutes:
         namespaces:
           from: Same

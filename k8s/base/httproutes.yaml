@@ -13,7 +13,7 @@ spec:
     - firecrawl-api.prometheusags.ai
   parentRefs:
     - name: firecrawl-gateway
-      sectionName: http
+      sectionName: http-api
   rules:
     - filters:
         - type: RequestRedirect
@@ -63,7 +63,7 @@ spec:
     - firecrawl.prometheusags.ai
   parentRefs:
     - name: firecrawl-gateway
-      sectionName: http
+      sectionName: http-ui
   rules:
     - filters:
         - type: RequestRedirect
