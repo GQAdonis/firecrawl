@@ -39,7 +39,7 @@ spec:
     - firecrawl-api.prometheusags.ai
   parentRefs:
     - name: firecrawl-gateway
-      sectionName: https
+      sectionName: https-api
   rules:
     - matches:
         - path:
@@ -89,7 +89,7 @@ spec:
     - firecrawl.prometheusags.ai
   parentRefs:
     - name: firecrawl-gateway
-      sectionName: https
+      sectionName: https-ui
   rules:
     - matches:
         - path:

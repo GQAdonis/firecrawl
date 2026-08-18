@@ -26,10 +26,26 @@ spec:
       allowedRoutes:
         namespaces:
           from: Same
-    - name: https
+    # Host-specific HTTPS listeners: a wildcard :443 listener with the shared
+    # *.prometheusags.ai cert overlaps every per-host listener using the same
+    # cert (OverlappingTLSConfig) and breaks SNI chains on those gateways.
+    - name: https-ui
       protocol: HTTPS
       port: 443
-      hostname: "*.prometheusags.ai"
+      hostname: firecrawl.prometheusags.ai
+      allowedRoutes:
+        namespaces:
+          from: Same
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - kind: Secret
+            name: prometheusags-wildcard-tls
+            namespace: firecrawl
+    - name: https-api
+      protocol: HTTPS
+      port: 443
+      hostname: firecrawl-api.prometheusags.ai
       allowedRoutes:
         namespaces:
           from: Same
