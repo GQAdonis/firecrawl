@@ -1,25 +1,44 @@
-import { RateLimiterMode } from "../types";
 import { getRedisConnection } from "../services/queue-service";
-import { getACUCTeam } from "../controllers/auth";
 import { getCrawl, StoredCrawl } from "./crawl-redis";
 import { logger } from "./logger";
 import { abTestJob } from "../services/ab-test";
 import { scrapeQueue, type NuQJob } from "../services/worker/nuq";
 export { QueueFullError } from "./queue-full-error";
+export {
+  getTeamQueueLimit,
+  MAX_BACKLOG_TIMEOUT_MS,
+  getConcurrencyLimitActiveJobsCount,
+  pushConcurrencyLimitActiveJob,
+  removeConcurrencyLimitActiveJob,
+} from "./concurrency-redis";
+import {
+  getTeamQueueLimit,
+  MAX_BACKLOG_TIMEOUT_MS,
+  constructConcurrencyLimitKey,
+  pushConcurrencyLimitActiveJob,
+  removeConcurrencyLimitActiveJob,
+} from "./concurrency-redis";
+import { autumnService } from "../services/autumn/autumn.service";
+import { reportPipelineError } from "./redis-pipeline";
 
-// min 50k, max 2M, 2000 per concurrent browser
-export function getTeamQueueLimit(concurrencyLimit: number): number {
-  return Math.min(Math.max(concurrencyLimit * 2000, 50_000), 2_000_000);
+// Fallback when Autumn can't give us a concurrency value.
+const DEFAULT_CONCURRENCY_LIMIT = 2;
+
+/**
+ * Returns the team's effective concurrency limit from Autumn's CONCURRENCY
+ * balance. Autumn is authoritative; when the entity is missing we fall back to
+ * the low default of 2. When Autumn errors, getConcurrencyLimit already returns
+ * a high fail-open value, so that carries through here.
+ */
+export async function getEffectiveConcurrencyLimit(
+  teamId: string,
+  orgId?: string | null,
+): Promise<number> {
+  const autumnValue = await autumnService.getConcurrencyLimit(teamId, orgId);
+  return autumnValue ?? DEFAULT_CONCURRENCY_LIMIT;
 }
 
-// Upper bound for how long a job may sit in the concurrency-limit backlog.
-// This bounds both the Redis ZSET score and the Postgres `times_out_at`
-// column on `nuq.queue_scrape_backlog`, so the reaper can always evict
-// stale rows. A backlogged crawl job that outlives this window is
-// unrecoverable anyway — its StoredCrawl in Redis (24h TTL) is gone.
-export const MAX_BACKLOG_TIMEOUT_MS = 172800000; // 48h
-
-const constructKey = (team_id: string) => "concurrency-limiter:" + team_id;
+const constructKey = constructConcurrencyLimitKey;
 const constructQueueKey = (team_id: string) =>
   "concurrency-limit-queue:" + team_id;
 
@@ -39,16 +58,6 @@ export async function cleanOldConcurrencyLimitEntries(
   );
 }
 
-export async function getConcurrencyLimitActiveJobsCount(
-  team_id: string,
-): Promise<number> {
-  return await getRedisConnection().zcount(
-    constructKey(team_id),
-    Date.now(),
-    Infinity,
-  );
-}
-
 export async function getConcurrencyLimitActiveJobs(
   team_id: string,
   now: number = Date.now(),
@@ -58,22 +67,6 @@ export async function getConcurrencyLimitActiveJobs(
     now,
     Infinity,
   );
-}
-
-export async function pushConcurrencyLimitActiveJob(
-  team_id: string,
-  id: string,
-  timeout: number,
-  now: number = Date.now(),
-) {
-  await getRedisConnection().zadd(constructKey(team_id), now + timeout, id);
-}
-
-export async function removeConcurrencyLimitActiveJob(
-  team_id: string,
-  id: string,
-) {
-  await getRedisConnection().zrem(constructKey(team_id), id);
 }
 
 export async function removeConcurrencyLimitedJobs(
@@ -91,7 +84,15 @@ export async function removeConcurrencyLimitedJobs(
     for (const id of chunk) {
       pipeline.del(constructJobKey(id));
     }
-    await pipeline.exec();
+    // Do not throw on command errors: cancel has already been recorded on
+    // the crawl, and the stale entries self-expire via their PX timeout.
+    // But never let the failure pass silently.
+    reportPipelineError(await pipeline.exec(), logger, {
+      module: "concurrency-limit",
+      method: "removeConcurrencyLimitedJobs",
+      teamId: team_id,
+      jobCount: chunk.length,
+    });
   }
 }
 
@@ -151,7 +152,16 @@ export async function pushConcurrencyLimitedJobs(
 
   pipeline.zadd(queueKey, ...zaddArgs);
   pipeline.sadd("concurrency-limit-queues", queueKey);
-  await pipeline.exec();
+  // Do not throw on command errors: the jobs are already durable in the
+  // NuQ backlog, and the concurrency-queue reconciler requeues anything
+  // missing from this derived Redis index on its next run. But never let
+  // the failure pass silently.
+  reportPipelineError(await pipeline.exec(), logger, {
+    module: "concurrency-limit",
+    method: "pushConcurrencyLimitedJobs",
+    teamId: team_id,
+    jobCount: jobs.length,
+  });
 }
 
 export async function getConcurrencyLimitedJobs(team_id: string) {
@@ -328,15 +338,9 @@ export async function concurrentJobDone(job: NuQJob<any>) {
       await cleanOldCrawlConcurrencyLimitEntries(job.data.crawl_id);
     }
 
-    const maxTeamConcurrency =
-      (
-        await getACUCTeam(
-          job.data.team_id,
-          false,
-          true,
-          job.data.is_extract ? RateLimiterMode.Extract : RateLimiterMode.Crawl,
-        )
-      )?.concurrency ?? 2;
+    const maxTeamConcurrency = await getEffectiveConcurrencyLimit(
+      job.data.team_id,
+    );
 
     let staleSkipped = 0;
     while (staleSkipped < 100) {

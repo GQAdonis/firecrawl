@@ -11,7 +11,12 @@ import {
   TERMINAL_STATUSES,
   type PollResponse,
 } from "./schema";
-import { failAsync, nextPollDelay } from "./utils";
+import {
+  alignPollDelay,
+  failAsync,
+  firePdfHeaders,
+  nextPollDelay,
+} from "./utils";
 
 type PollDeps = {
   baseUrl: string;
@@ -22,22 +27,29 @@ type PollDeps = {
   fetchImpl: typeof undiciFetch;
   sleep: (ms: number, signal?: AbortSignal) => Promise<void>;
   now: () => number;
+  random?: () => number;
+  /** When the job is expected to finish (its `deadline_at`). Polls are
+   * pulled forward to land just after it and run at the floor past it —
+   * see alignPollDelay. Absent, plain backoff applies throughout. */
+  jobDeadlineAtMs?: number;
+  /** Observes each non-terminal status seen while polling — lets the
+   * caller keep a live "where is this job" snapshot (used to enrich
+   * timeout errors for by-reference jobs that outlive the scrape).
+   * `estimatedRemainingMs` is fire-pdf's live estimate when present. */
+  onNonTerminalStatus?: (
+    status: "queued" | "published" | "running",
+    estimatedRemainingMs?: number,
+  ) => void;
 };
 
 type PollOk = { poll: PollResponse; pollCount: number };
 
 export async function pollUntilTerminal(deps: PollDeps): Promise<PollOk> {
-  const {
-    baseUrl,
-    scrapeId,
-    pollingDeadline,
-    meta,
-    fetchImpl,
-    sleep,
-    now,
-  } = deps;
+  const { baseUrl, scrapeId, pollingDeadline, meta, fetchImpl, sleep, now } =
+    deps;
   let pollCount = 0;
-  let lastDelay = deps.initialDelay;
+  const random = deps.random ?? Math.random;
+  let lastDelay = nextPollDelay(0, deps.initialDelay, random);
 
   while (true) {
     if (now() > pollingDeadline) {
@@ -46,13 +58,17 @@ export async function pollUntilTerminal(deps: PollDeps): Promise<PollOk> {
     }
 
     meta.abort.throwIfAborted();
-    await sleep(lastDelay, meta.abort.asSignal());
+    await sleep(
+      alignPollDelay(lastDelay, now(), deps.jobDeadlineAtMs),
+      meta.abort.asSignal(),
+    );
     pollCount++;
 
     let pollResp;
     try {
       pollResp = await fetchImpl(`${baseUrl}/jobs/${scrapeId}`, {
         method: "GET",
+        headers: firePdfHeaders(),
         signal: meta.abort.asSignal(),
       });
     } catch (error) {
@@ -66,6 +82,11 @@ export async function pollUntilTerminal(deps: PollDeps): Promise<PollOk> {
 
     const pollStatus = pollResp.status;
     const pollBody = await pollResp.json().catch(() => ({}));
+
+    if (pollStatus === 401) {
+      firePdfAsyncPollCount.observe(pollCount);
+      failAsync(meta, "http_401", { pollCount });
+    }
 
     if (pollStatus === 404) {
       firePdfAsyncPollCount.observe(pollCount);
@@ -134,6 +155,17 @@ export async function pollUntilTerminal(deps: PollDeps): Promise<PollOk> {
       return { poll: parsed.data, pollCount };
     }
 
-    lastDelay = nextPollDelay(lastDelay, parsed.data.retry_after_ms);
+    if (
+      parsed.data.status === "queued" ||
+      parsed.data.status === "published" ||
+      parsed.data.status === "running"
+    ) {
+      deps.onNonTerminalStatus?.(
+        parsed.data.status,
+        parsed.data.estimated_remaining_ms,
+      );
+    }
+
+    lastDelay = nextPollDelay(lastDelay, parsed.data.retry_after_ms, random);
   }
 }

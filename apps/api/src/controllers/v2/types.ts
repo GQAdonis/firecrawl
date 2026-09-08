@@ -2,8 +2,10 @@ import { Request, Response } from "express";
 import { config } from "../../config";
 import { z } from "zod";
 import { protocolIncluded, checkUrl } from "../../lib/validateUrl";
+import { hasReachableHost } from "../../lib/url-utils";
 import { countries } from "../../lib/validate-country";
 import { includesFormat } from "../../lib/format-utils";
+import { addPathRegexIssues, pathPatternsSchema } from "../../lib/crawl-regex";
 import {
   ExtractorOptions,
   PageOptions,
@@ -17,6 +19,7 @@ import {
   ScrapeOptions as V1ScrapeOptions,
 } from "../v1/types";
 import type { InternalOptions } from "../../scraper/scrapeURL";
+import type { PdfPageBlocks } from "../../scraper/scrapeURL/engines/pdf/types";
 import { ErrorCodes } from "../../lib/error";
 import Ajv from "ajv";
 import addFormats from "ajv-formats";
@@ -26,10 +29,21 @@ import {
   createWebhookSchema,
 } from "../../services/webhook/schema";
 import { BrandingProfile } from "../../types/branding";
+import { ProductProfile } from "../../types/product";
+import { MenuProfile } from "../../types/menu";
+import { threatProtectionOverrideSchema } from "../../lib/threat-protection/config";
+import { auditMetadataSchema } from "../../lib/siem-logging/types";
 
 // Base URL schema with common validation logic
-export const URL = z.preprocess(
-  x => {
+export const URL = z
+  .string()
+  // .overwrite must stay after .string(). It interpolates x into a template, so
+  // a non-string url would become the string "http://undefined" — a valid URL
+  // whose only failure is the TLD check below, which would blame a field the
+  // caller never sent. Letting .string() reject it first gives the real error.
+  // .overwrite rather than .transform, so this stays a ZodString and .url() /
+  // .regex() can still chain onto it.
+  .overwrite(x => {
     if (!protocolIncluded(x as string)) {
       x = `http://${x}`;
     }
@@ -45,34 +59,33 @@ export const URL = z.preprocess(
     // }
 
     return x;
-  },
-  z
-    .url()
-    .regex(/^https?:\/\//i, "URL uses unsupported protocol")
-    .refine(x => {
-      if (config.TEST_SUITE_SELF_HOSTED && config.ALLOW_LOCAL_WEBHOOKS) {
-        if (
-          /^https?:\/\/(localhost|127\.0\.0\.1|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3})(:\d+)?([\/?#]|$)/i.test(
-            x as string,
-          )
-        ) {
-          return true;
-        }
-      }
-      return /(\.[a-zA-Z0-9-\u0400-\u04FF\u0500-\u052F\u2DE0-\u2DFF\uA640-\uA69F]{2,}|\.xn--[a-zA-Z0-9-]{1,})(:\d+)?([\/?#]|$)/i.test(
-        x,
-      );
-    }, "URL must have a valid top-level domain or be a valid path")
-    .refine(x => {
-      try {
-        checkUrl(x as string);
+  })
+  .url()
+  .regex(/^https?:\/\//i, "URL uses unsupported protocol")
+  .refine(x => {
+    if (config.TEST_SUITE_SELF_HOSTED && config.ALLOW_LOCAL_WEBHOOKS) {
+      if (
+        /^https?:\/\/(localhost|127\.0\.0\.1|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3})(:\d+)?([\/?#]|$)/i.test(
+          x as string,
+        )
+      ) {
         return true;
-      } catch (_) {
-        return false;
       }
-    }, "Invalid URL"),
-  // .refine((x) => !isUrlBlocked(x as string), UNSUPPORTED_SITE_MESSAGE),
-);
+    }
+    // Same TLD-shaped check as before, plus IP literals — which the old
+    // inline regex accepted only when the last octet had 2+ digits, so
+    // 8.8.8.8 was rejected while 169.254.169.254 passed.
+    return hasReachableHost(x as string);
+  }, "URL must have a valid top-level domain or be an IP address")
+  .refine(x => {
+    try {
+      checkUrl(x as string);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }, "Invalid URL");
+// .refine((x) => !isUrlBlocked(x as string), UNSUPPORTED_SITE_MESSAGE)
 
 const strictMessage =
   "Unrecognized key in body -- please review the v2 API documentation for request body changes";
@@ -346,6 +359,7 @@ const jsonFormatWithOptions = z.strictObject({
       message: OPENAI_SCHEMA_ERROR_MESSAGE,
     }),
   prompt: z.string().max(10000).optional(),
+  checkPromptInjection: z.boolean().optional(),
 });
 
 export type JsonFormatWithOptions = z.output<typeof jsonFormatWithOptions>;
@@ -446,6 +460,7 @@ export type FormatObject =
   | { type: "markdown" }
   | { type: "html" }
   | { type: "rawHtml" }
+  | { type: "rawBase64" }
   | { type: "links" }
   | { type: "images" }
   | { type: "summary" }
@@ -458,28 +473,78 @@ export type FormatObject =
   | HighlightsFormatWithOptions
   | QueryFormatWithOptions
   | { type: "branding" }
+  | { type: "product" }
+  | { type: "menu" }
   | { type: "audio" }
-  | { type: "video" }
-  | { type: "pii" };
+  | { type: "video" };
 
 const pdfModeSchema = z.enum(["fast", "auto", "ocr"]);
 
 export type PDFMode = z.infer<typeof pdfModeSchema>;
 
-const pdfParserWithOptions = z.strictObject({
-  type: z.literal("pdf"),
-  mode: pdfModeSchema.optional(),
-  maxPages: z.int().positive().finite().max(10000).optional(),
-  // Experimental: route this request through the fire-pdf async pipeline
-  // (POST /jobs + poll) instead of the sync POST /ocr endpoint. Falls back
-  // to sync on any async-path failure, so user-visible behavior is unchanged
-  // beyond latency variance. Underscored to mark as internal/experimental.
-  __firePdfAsync: z.boolean().optional(),
+const pdfParserWithOptions = z
+  .strictObject({
+    type: z.literal("pdf"),
+    mode: pdfModeSchema.optional(),
+    maxPages: z.int().positive().finite().max(10000).optional(),
+    /** Include physical per-page markdown alongside document markdown —
+     * populates `document.pages`. */
+    pages: z.boolean().optional(),
+    /**
+     * @deprecated Renamed to `pages` (2026-08). Accepted as a silent alias
+     * for callers that adopted the option pre-rename; never documented.
+     * Normalized into `pages` below — internal code never sees this field.
+     */
+    pageMarkdown: z.boolean().optional(),
+    /** Include per-page typed layout blocks (bounding boxes, block types,
+     * reading order) alongside document markdown — populates
+     * `document.blocks`. */
+    blocks: z.boolean().optional(),
+    /** Join PDF pages in `document.markdown` with
+     * `\n\n---\n\n<!-- page N -->\n\n` where N is the 1-based physical page
+     * of the content that follows. Markers appear between pages only (no
+     * leading marker for page 1), and numbering may skip pages merged by
+     * cross-page stitching — callers that need every physical page should
+     * use `pages: true` instead. No new response field. */
+    pageMarkers: z.boolean().optional(),
+    // Experimental: route this request through the fire-pdf async pipeline
+    // (POST /jobs + poll) instead of the sync POST /ocr endpoint. Falls back
+    // to sync on any async-path failure, so user-visible behavior is unchanged
+    // beyond latency variance. Underscored to mark as internal/experimental.
+    __firePdfAsync: z.boolean().optional(),
+  })
+  .transform(({ pageMarkdown, pages, ...parser }) => {
+    // Fold the deprecated alias into the canonical name at the schema
+    // boundary; `pages` wins when both are set. Keep the key optional so
+    // plain `{ type: "pdf" }` parser literals stay assignable.
+    const normalized: typeof parser & { pages?: boolean } = { ...parser };
+    const effective = pages ?? pageMarkdown;
+    if (effective !== undefined) normalized.pages = effective;
+    return normalized;
+  });
+
+/**
+ * Raster image OCR (PNG, JPEG, JPEG 2000, TIFF, GIF, BMP). Like `pdf` it is
+ * part of the default list, so a request that says nothing about parsers OCRs
+ * image URLs (behind the imageOcr team flag while it rolls out); an explicit
+ * list that omits it (`["pdf"]`, `[]`) opts out and keeps the historical
+ * unsupported-file rejection. The object form carries no options yet; it
+ * exists so options can be added later without a breaking change.
+ */
+const imageParserWithOptions = z.strictObject({
+  type: z.literal("image"),
 });
 
 const parsersSchema = z
-  .array(z.union([z.literal("pdf"), pdfParserWithOptions]))
-  .prefault(["pdf"]);
+  .array(
+    z.union([
+      z.literal("pdf"),
+      pdfParserWithOptions,
+      z.literal("image"),
+      imageParserWithOptions,
+    ]),
+  )
+  .prefault(["pdf", "image"]);
 
 type Parsers = z.infer<typeof parsersSchema>;
 
@@ -492,6 +557,22 @@ export function shouldParsePDF(parsers?: Parsers): boolean {
     }
     return false;
   });
+}
+
+/**
+ * Whether the request wants raster image OCR. Like PDFs, images are parsed
+ * by default: `undefined` means the default list, while an explicit list
+ * that omits `image` (including `[]`) opts out.
+ */
+export function shouldParseImages(parsers?: Parsers): boolean {
+  if (!parsers) return true;
+  return parsers.some(
+    parser =>
+      parser === "image" ||
+      (typeof parser === "object" &&
+        parser !== null &&
+        parser.type === "image"),
+  );
 }
 
 export function getPDFMaxPages(parsers?: Parsers): number | undefined {
@@ -517,6 +598,44 @@ export function getPDFMode(parsers?: Parsers): PDFMode {
     }
   }
   return "auto";
+}
+
+export function getPDFPageMarkdown(parsers?: Parsers): boolean {
+  if (!parsers) return false;
+  for (const parser of parsers) {
+    if (typeof parser === "object" && parser.type === "pdf") {
+      // The deprecated `pageMarkdown` alias is folded into `pages` at the
+      // schema boundary, so freshly parsed parsers only carry the canonical
+      // name. Serialized options bypass re-parsing (queued jobs and crawl
+      // option snapshots from before the rename), so read the legacy key
+      // defensively too; `pages` wins when both are present.
+      return (
+        (parser.pages ??
+          (parser as { pageMarkdown?: boolean }).pageMarkdown) === true
+      );
+    }
+  }
+  return false;
+}
+
+export function getPDFBlocks(parsers?: Parsers): boolean {
+  if (!parsers) return false;
+  for (const parser of parsers) {
+    if (typeof parser === "object" && parser.type === "pdf") {
+      return parser.blocks === true;
+    }
+  }
+  return false;
+}
+
+export function getPDFPageMarkers(parsers?: Parsers): boolean {
+  if (!parsers) return false;
+  for (const parser of parsers) {
+    if (typeof parser === "object" && parser.type === "pdf") {
+      return parser.pageMarkers === true;
+    }
+  }
+  return false;
 }
 
 export function getFirePdfAsync(parsers?: Parsers): boolean {
@@ -621,6 +740,7 @@ const baseScrapeOptions = z.strictObject({
           z.strictObject({ type: z.literal("markdown") }),
           z.strictObject({ type: z.literal("html") }),
           z.strictObject({ type: z.literal("rawHtml") }),
+          z.strictObject({ type: z.literal("rawBase64") }),
           z.strictObject({ type: z.literal("links") }),
           z.strictObject({ type: z.literal("images") }),
           z.strictObject({ type: z.literal("summary") }),
@@ -630,12 +750,13 @@ const baseScrapeOptions = z.strictObject({
           screenshotFormatWithOptions,
           attributesFormatWithOptions,
           z.strictObject({ type: z.literal("branding") }),
+          z.strictObject({ type: z.literal("product") }),
+          z.strictObject({ type: z.literal("menu") }),
           questionFormatWithOptions,
           highlightsFormatWithOptions,
           queryFormatWithOptions,
           z.strictObject({ type: z.literal("audio") }),
           z.strictObject({ type: z.literal("video") }),
-          z.strictObject({ type: z.literal("pii") }),
         ])
         .array()
         .optional()
@@ -655,7 +776,11 @@ const baseScrapeOptions = z.strictObject({
       const hasJson = x.some(f => f.type === "json");
       const hasDeterministicJson = x.some(f => f.type === "deterministicJson");
       return !(hasJson && hasDeterministicJson);
-    }, "Cannot specify both json and deterministicJson formats"),
+    }, "Cannot specify both json and deterministicJson formats")
+    .refine(
+      x => !x.some(f => f.type === "rawBase64") || x.length === 1,
+      "The rawBase64 format cannot be combined with other formats",
+    ),
   headers: z.record(z.string(), z.string()).optional(),
   includeTags: z
     .string()
@@ -688,6 +813,10 @@ const baseScrapeOptions = z.strictObject({
   storeInCache: z.boolean().prefault(true),
   lockdown: z.boolean().prefault(false),
   redactPII: redactPIISchema,
+  // Enterprise: per-request field-level override of the org's threat
+  // protection policy. Gated on the team flag + org config (checkPermissions).
+  threatProtection: threatProtectionOverrideSchema.optional(),
+  auditMetadata: auditMetadataSchema.optional(),
 
   profile: z
     .object({
@@ -720,6 +849,18 @@ const waitForRefineOpts = {
   path: ["waitFor"],
 };
 
+export const applyScrapeOptionsDefaults = <T extends ScrapeOptionsBase>(
+  obj: T,
+): T & { skipTlsVerification: boolean } => ({
+  ...obj,
+  skipTlsVerification:
+    obj.skipTlsVerification ??
+    ((obj.headers && Object.keys(obj.headers).length > 0) ||
+    (obj.actions && obj.actions.length > 0)
+      ? false
+      : true),
+});
+
 // Base transform function that handles both nullable and non-nullable cases
 // Uses generic type to preserve all fields from extended schemas
 const extractTransformImpl = <T extends ScrapeOptionsBase | undefined>(
@@ -727,7 +868,7 @@ const extractTransformImpl = <T extends ScrapeOptionsBase | undefined>(
 ): T extends undefined ? undefined : T => {
   if (!obj) return obj as T extends undefined ? undefined : T;
   // Handle timeout
-  let result = { ...obj };
+  let result = applyScrapeOptionsDefaults(obj);
   if (
     obj.formats.find(x => typeof x === "object" && x.type === "json") &&
     obj.timeout === 30000
@@ -799,7 +940,7 @@ export type BaseScrapeOptions = z.infer<typeof baseScrapeOptions>;
 
 export type ScrapeOptions = BaseScrapeOptions;
 
-export type UploadedParseFileKind = "html" | "pdf" | "document";
+export type UploadedParseFileKind = "html" | "pdf" | "document" | "image";
 
 export type UploadedParseFile = {
   buffer: Buffer;
@@ -864,6 +1005,7 @@ const extractOptions = z
     __experimental_showCostTracking: z.boolean().prefault(false),
     ignoreInvalidURLs: z.boolean().prefault(true),
     webhook: webhookSchema.optional(),
+    threatProtection: threatProtectionOverrideSchema.optional(),
   })
   .refine(obj => obj.urls || obj.prompt, {
     error: "Either 'urls' or 'prompt' must be provided.",
@@ -893,38 +1035,77 @@ const agentWebhookSchema = createWebhookSchema([
   "cancelled",
 ]);
 
-export const agentRequestSchema = z.strictObject({
-  urls: URL.array().optional(),
-  prompt: z.string().max(10000),
-  schema: z
-    .any()
-    .optional()
-    .superRefine((val, ctx) => {
-      if (!val) return; // Allow undefined schema
-      try {
-        agentAjv.compile(val);
-      } catch (e) {
-        const message =
-          e instanceof Error
-            ? e.message
-            : typeof e === "string"
-              ? e
-              : "Unknown error";
-        ctx.addIssue({
-          code: "custom",
-          message: `Invalid JSON schema: ${message}`,
-        });
-      }
-    }),
-  origin: z.string().optional().prefault("api"),
-  integration: integrationSchema.optional().transform(val => val || null),
-  maxCredits: z.number().optional(),
-  strictConstrainToURLs: z.boolean().optional(),
-  webhook: agentWebhookSchema.optional(),
-
-  overrideWhitelist: z.string().optional(),
-  model: z.enum(["spark-1-pro", "spark-1-mini"]).default("spark-1-pro"),
+// Forwarded verbatim to the agent service, which owns every default and the
+// per-thread inheritance rules; the gateway only validates the shape.
+const agentExchangeSchema = z.strictObject({
+  enabled: z.boolean().optional(),
+  toolkits: z.array(z.string()).optional(),
+  maxCalls: z.number().int().min(1).max(30).optional(),
+  requireApproval: z.boolean().optional(),
+  approve: z
+    .strictObject({
+      approvalId: z.string().uuid(),
+      callIds: z.array(z.string()).optional(),
+      always: z.boolean().optional(),
+    })
+    .optional(),
+  decline: z
+    .strictObject({
+      approvalId: z.string().uuid(),
+    })
+    .optional(),
 });
+
+export const agentRequestSchema = z
+  .strictObject({
+    urls: URL.array().optional(),
+    prompt: z.string().max(10000),
+    schema: z
+      .any()
+      .optional()
+      .superRefine((val, ctx) => {
+        if (!val) return; // Allow undefined schema
+        try {
+          agentAjv.compile(val);
+        } catch (e) {
+          const message =
+            e instanceof Error
+              ? e.message
+              : typeof e === "string"
+                ? e
+                : "Unknown error";
+          ctx.addIssue({
+            code: "custom",
+            message: `Invalid JSON schema: ${message}`,
+          });
+        }
+      }),
+    origin: z.string().optional().prefault("api"),
+    integration: integrationSchema.optional().transform(val => val || null),
+    maxCredits: z.number().optional(),
+    strictConstrainToURLs: z.boolean().optional(),
+    webhook: agentWebhookSchema.optional(),
+
+    overrideWhitelist: z.string().optional(),
+    // The spark-1 preset names stay accepted so existing callers keep working,
+    // but spark-1 is retired: the transform below runs every request on
+    // spark-2 regardless of what was sent.
+    model: z.enum(["spark-1-pro", "spark-1-mini", "spark-2"]).optional(),
+    effort: z.enum(["low", "medium", "high"]).optional(),
+    threatProtection: threatProtectionOverrideSchema.optional(),
+    auditMetadata: auditMetadataSchema.optional(),
+    // Continue an existing thread. Omitted starts a new one.
+    threadId: z.string().uuid().optional(),
+    mode: z.enum(["extract", "chat"]).optional(),
+    exchange: agentExchangeSchema.optional(),
+  })
+  // spark-1 is retired and spark-2 is the default. The spark-1 preset names
+  // remain valid input and silently resolve to spark-2, so every request —
+  // with or without effort, with or without a model — runs spark-2.
+  .transform(x => ({
+    ...x,
+    model: "spark-2" as const,
+  }));
 
 export type AgentRequest = z.infer<typeof agentRequestSchema>;
 // export type AgentRequestInput = z.input<typeof agentRequestSchema>;
@@ -980,7 +1161,8 @@ const uploadedParseFileSchema = z.custom<UploadedParseFile>(
       (value as any).kind === undefined ||
       (value as any).kind === "html" ||
       (value as any).kind === "pdf" ||
-      (value as any).kind === "document"),
+      (value as any).kind === "document" ||
+      (value as any).kind === "image"),
   {
     error: "A file upload is required.",
   },
@@ -1002,6 +1184,10 @@ const parseRequestSchemaBase = baseScrapeOptions.extend({
 });
 
 export const parseRequestSchema = strictWithMessage(parseRequestSchemaBase)
+  .refine(
+    x => !x.formats.some(format => format.type === "rawBase64"),
+    "The rawBase64 format is not supported for parse uploads",
+  )
   .refine(waitForRefine, waitForRefineOpts)
   .transform(x => {
     const { file, ...scrapeLike } = x;
@@ -1082,8 +1268,8 @@ export type BatchScrapeRequestInput = Omit<
 };
 
 export const crawlerOptions = z.strictObject({
-  includePaths: z.string().array().prefault([]),
-  excludePaths: z.string().array().prefault([]),
+  includePaths: pathPatternsSchema.prefault([]),
+  excludePaths: pathPatternsSchema.prefault([]),
   maxDiscoveryDepth: z.number().optional(),
   limit: z.number().prefault(10000), // default?
   crawlEntireDomain: z.boolean().optional(),
@@ -1130,6 +1316,10 @@ const crawlRequestSchemaBase = crawlerOptions.extend({
 });
 
 export const crawlRequestSchema = strictWithMessage(crawlRequestSchemaBase)
+  .superRefine((x, ctx) => {
+    addPathRegexIssues(x.includePaths, "includePaths", ctx);
+    addPathRegexIssues(x.excludePaths, "excludePaths", ctx);
+  })
   .refine(x => waitForRefine(x.scrapeOptions), waitForRefineOpts)
   .transform(x => {
     const scrapeOptionsValue = x.scrapeOptions ?? baseScrapeOptions.parse({});
@@ -1175,9 +1365,16 @@ const mapRequestSchemaBase = crawlerOptions
     ignoreCache: z.boolean().prefault(false),
     location: locationSchema,
     headers: z.record(z.string(), z.string()).optional(),
+    threatProtection: threatProtectionOverrideSchema.optional(),
+    auditMetadata: auditMetadataSchema.optional(),
   });
 
-export const mapRequestSchema = strictWithMessage(mapRequestSchemaBase);
+export const mapRequestSchema = strictWithMessage(
+  mapRequestSchemaBase,
+).superRefine((x, ctx) => {
+  addPathRegexIssues(x.includePaths, "includePaths", ctx);
+  addPathRegexIssues(x.excludePaths, "excludePaths", ctx);
+});
 
 // export type MapRequest = {
 //   url: string;
@@ -1187,78 +1384,34 @@ export const mapRequestSchema = strictWithMessage(mapRequestSchemaBase);
 export type MapRequest = z.infer<typeof mapRequestSchema>;
 export type MapRequestInput = z.input<typeof mapRequestSchema>;
 
-export type PIISource = "model" | "heuristics" | "unknown";
-
-export type PIISpan = {
-  start: number;
-  end: number;
-  // Unified entity bucket. Present when `kind` maps onto one of the public
-  // entity buckets; omitted when fire-privacy returned a recognizer kind we
-  // don't expose (e.g. ORGANIZATION, DATE_TIME). Spans without an entity
-  // are dropped under any `entities` allowlist.
-  entity?: RedactPIIEntity;
-  // Granular recognizer label from fire-privacy (e.g. PRIVATE_PERSON,
-  // EMAIL_ADDRESS, ACCOUNT_NUMBER). Useful for audit / debugging; prefer
-  // `entity` for taxonomy-level checks.
-  kind: string;
-  source: PIISource;
-  // Confidence in [0, 1] when fire-privacy returned a score. Omitted when
-  // the recognizer didn't supply one.
-  score?: number;
-};
-
-// `ok`      — redaction completed; redactedMarkdown is the result.
-// `skipped` — redaction was not performed; see `reason` for why.
-//             redactedMarkdown may be the original text or null.
-// `failed`  — redaction was attempted but did not produce a usable result;
-//             see `reason`. redactedMarkdown is null.
-type PIIStatus = "ok" | "skipped" | "failed";
-
-// Why redaction was skipped or failed. Always set when status !== "ok".
-//   empty_input         — no markdown to redact, or markdown was whitespace
-//   too_large           — input exceeded the redaction-side byte ceiling
-//   upstream_skipped    — fire-privacy reported model_status: "skipped"
-//   service_unavailable — fire-privacy returned 503
-//   timeout             — request exceeded the redaction timeout budget
-//   error               — any other failure (5xx, invalid JSON, network)
-export type PIIReason =
-  | "empty_input"
-  | "too_large"
-  | "upstream_skipped"
-  | "service_unavailable"
-  | "timeout"
-  | "error";
-
-export type PIIBlock = {
-  status: PIIStatus;
-  reason?: PIIReason;
-  redactedMarkdown: string | null;
-  spans: PIISpan[];
-  // Count of spans per public entity bucket. Spans whose `kind` doesn't
-  // map onto a bucket are not counted. Only non-zero entries are present.
-  counts: Partial<Record<RedactPIIEntity, number>>;
-};
-
 export type Document = {
   title?: string;
   description?: string;
   url?: string;
   markdown?: string;
+  /** Physical PDF pages, present only for the `parsers[].pages` option. */
+  pages?: Array<{ pageNumber: number; markdown: string }>;
+  /** Typed PDF layout blocks with bounding boxes, present only for
+   * `parsers[].blocks`. */
+  blocks?: PdfPageBlocks[];
   html?: string;
   rawHtml?: string;
+  rawBase64?: string;
   links?: string[];
   images?: string[];
   screenshot?: string;
   audio?: string;
   video?: string;
+  videos?: VideoItem[];
   extract?: any;
   json?: any;
   summary?: string;
   answer?: string;
   highlights?: string;
   branding?: BrandingProfile;
+  product?: ProductProfile;
+  menu?: MenuProfile;
   warning?: string;
-  pii?: PIIBlock;
   attributes?: {
     selector: string;
     attribute: string;
@@ -1336,6 +1489,7 @@ export type Document = {
     scrapeId?: string;
     error?: string;
     numPages?: number;
+    totalPages?: number;
     contentType?: string;
     timezone?: string;
     proxyUsed: "basic" | "stealth";
@@ -1353,6 +1507,22 @@ export type Document = {
     description: string;
     url: string;
   };
+};
+
+export type VideoItem = {
+  url: string;
+  sourceURL: string;
+  source: string;
+  kind?: string;
+  provider?: string;
+  title?: string;
+  thumbnail?: string;
+  description?: string;
+  duration?: string;
+  mimeType?: string;
+  width?: number;
+  height?: number;
+  metadata?: Record<string, unknown>;
 };
 
 export type ErrorResponse = {
@@ -1395,6 +1565,7 @@ export interface URLTrace {
 
 export interface ExtractResponse {
   success: boolean;
+  code?: ErrorCodes;
   error?: string;
   data?: any;
   scrape_id?: string;
@@ -1408,11 +1579,83 @@ export interface ExtractResponse {
   creditsUsed?: number;
 }
 
-export type AgentResponse =
+export type AgentListResponse =
   | ErrorResponse
+  | {
+      success: true;
+      agents: {
+        id: string;
+        createdAt: string;
+        targetHint: string;
+        origin: string;
+        integration?: string;
+        settings: {
+          hidden: boolean;
+          starred: boolean;
+          label?: string;
+        };
+        status: "processing" | "completed" | "failed";
+        options?: {
+          urls?: string[];
+          prompt: string;
+          schema?: any;
+          // Widened past the known presets on purpose: this is the stored
+          // value from historical runs, and new models ship without an API
+          // type release.
+          model: "spark-1-pro" | "spark-1-mini" | "spark-2" | (string & {});
+          effort?: "low" | "medium" | "high";
+        };
+      }[];
+      next?: string;
+    };
+
+export type AgentMode = "extract" | "chat";
+
+export type AgentSuggestion = {
+  label: string;
+  prompt: string;
+};
+
+export type AgentPendingApproval = {
+  id: string;
+  reason: string;
+  calls: {
+    id: string;
+    provider: string;
+    capability: string;
+    input: Record<string, unknown>;
+    more?: Record<string, unknown>[];
+    creditsEstimate: number | null;
+  }[];
+  resolution: null | {
+    approved: boolean;
+    callIds: string[];
+    always: boolean;
+    byRunId: string;
+  };
+};
+
+// What a run did with Exchange, as the agent service reports it. `toolkits` and
+// `requireApproval` are what the run resolved to after thread inheritance, so
+// they describe the run rather than echoing the request.
+export type AgentExchangeSummary = {
+  enabled: boolean;
+  toolkits?: string[];
+  requireApproval?: boolean;
+  paidCalls: number;
+  creditsUsed: number | null;
+};
+
+export type AgentResponse =
+  | (ErrorResponse & {
+      // Set on a 409 thread_busy: the run currently holding the thread.
+      runId?: string;
+    })
   | {
       success: boolean;
       id: string;
+      threadId?: string;
+      threadTurn?: number;
     };
 
 export type AgentStatusResponse =
@@ -1422,9 +1665,106 @@ export type AgentStatusResponse =
       status: "processing" | "completed" | "failed";
       error?: string;
       data?: any;
-      model?: "spark-1-pro" | "spark-1-mini";
+      model?: "spark-1-pro" | "spark-1-mini" | "spark-2";
+      effort?: "low" | "medium" | "high";
       expiresAt: string;
       creditsUsed?: number;
+      threadId?: string;
+      threadTurn?: number;
+      mode?: AgentMode;
+      message?: string;
+      suggestions?: AgentSuggestion[];
+      pendingApproval?: AgentPendingApproval;
+      exchange?: AgentExchangeSummary;
+    };
+
+type AgentThreadRun = {
+  id: string;
+  turn: number;
+  mode: AgentMode;
+  prompt: string;
+  urls?: string[];
+  schema?: unknown;
+  effort?: "low" | "medium" | "high";
+  status:
+    | "processing"
+    | "succeeded"
+    | "failed"
+    | "cancelled"
+    | "refused"
+    | "credit_limit_reached";
+  createdAt: string;
+  finishedAt: string | null;
+  creditsUsed: number | null;
+  message: string | null;
+  // Only present when the request asked for includeData.
+  data?: unknown;
+  suggestions?: AgentSuggestion[] | null;
+  pendingApproval?: AgentPendingApproval | null;
+  exchange?: AgentExchangeSummary | null;
+};
+
+export type AgentThread = {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  status: "idle" | "running";
+  runs: AgentThreadRun[];
+};
+
+export type AgentThreadResponse =
+  | ErrorResponse
+  | {
+      success: true;
+      thread: AgentThread;
+    };
+
+export type AgentTraceResponse =
+  | ErrorResponse
+  | {
+      success: true;
+      id: string;
+      events: object[];
+      creditsUsed: number;
+      activeBrowserSessions?: Array<{
+        id: string;
+        liveViewUrl: string;
+        viewport: {
+          width: number;
+          height: number;
+        };
+      }>;
+    };
+
+/**
+ * A finished run distilled into something reusable: a SKILL.md to paste into a
+ * coding agent, and a workflow script that reproduces the run through the API.
+ * The upstream shape is passed through verbatim.
+ */
+export type AgentSkillResponse =
+  | ErrorResponse
+  | {
+      success: true;
+      id: string;
+      skill: {
+        name: string;
+        spec: object;
+        skillMd: string;
+        workflow: string;
+        schema: string;
+      };
+      blueprint: object;
+      generatedAt: string;
+      generated: boolean;
+    };
+
+export type AgentSnapshotResponse =
+  | ErrorResponse
+  | {
+      success: true;
+      id: string;
+      snapshotId: string;
+      snapshot: string;
     };
 
 export type AgentCancelResponse =
@@ -1462,6 +1802,7 @@ export type MapResponse =
   | ErrorResponse
   | {
       success: true;
+      id: string;
       links?: MapDocument[];
       warning?: string;
     };
@@ -1491,6 +1832,9 @@ export type CrawlStatusResponse =
       total: number;
       creditsUsed: number;
       expiresAt: string;
+      createdAt?: string;
+      completedAt?: string;
+      duration?: number;
       next?: string;
       data: Document[];
       warning?: string;
@@ -1503,6 +1847,9 @@ export type CrawlStatusResponse =
       total: number;
       creditsUsed: number;
       expiresAt: string;
+      createdAt?: string;
+      completedAt?: string;
+      duration?: number;
       data: Document[];
     };
 
@@ -1544,6 +1891,8 @@ type Account = {
 export type TeamFlags = {
   ignoreRobots?: "disabled" | "allowed" | "forced";
   customRobotsAgent?: "disabled" | "allowed";
+  threatProtection?: "disabled" | "allowed" | "forced";
+  siemLogging?: boolean;
   unblockedDomains?: string[];
   forceZDR?: boolean;
   allowZDR?: boolean;
@@ -1553,10 +1902,29 @@ export type TeamFlags = {
   checkRobotsOnScrape?: boolean;
   crawlTtlHours?: number;
   ipWhitelist?: boolean;
+  // gates the per-team API key IP allowlist (ip_restriction_config table)
+  ipRestriction?: boolean;
+  // gates the per-key scope/format lockdown (key_restriction_config table)
+  keyRestriction?: boolean;
   bypassCreditChecks?: boolean;
   debugBranding?: boolean;
   maxBrowserSessions?: number;
   researchBeta?: boolean;
+  menuBeta?: boolean;
+  enrichBeta?: boolean;
+  professionalProfileCompanyDataBeta?: boolean;
+  organizationDataSourceAccess?: Record<
+    string,
+    {
+      status?: "enabled" | "disabled" | "suspended" | string | null;
+      termsKey?: string | null;
+      termsVersion?: string | null;
+      termsAcceptedAt?: string | null;
+      enabledAt?: string | null;
+      disabledAt?: string | null;
+      disabledReason?: string | null;
+    }
+  >;
 } | null;
 
 interface RequestWithMaybeACUC<
@@ -1645,6 +2013,7 @@ function fromV0CrawlerOptions(
     internalOptions: {
       v0CrawlOnlyUrls: x.returnOnlyUrls,
       teamId,
+      orgId: null,
     },
   };
 }
@@ -1695,7 +2064,7 @@ export function fromV0ScrapeOptions(
       parsers:
         pageOptions.parsePDF !== undefined
           ? pageOptions.parsePDF
-            ? ["pdf"]
+            ? ["pdf", "image"]
             : []
           : undefined,
       actions: pageOptions.actions,
@@ -1709,6 +2078,7 @@ export function fromV0ScrapeOptions(
       atsv: pageOptions.atsv,
       v0DisableJsDom: pageOptions.disableJsDom,
       teamId,
+      orgId: null,
       ...(extractorOptions !== undefined &&
       extractorOptions.mode.includes("llm-extraction")
         ? {
@@ -1773,6 +2143,7 @@ export function fromV1ScrapeOptions(
               type: "json",
               schema: opts?.schema,
               prompt: opts?.prompt,
+              checkPromptInjection: opts?.checkPromptInjection ?? false,
             };
             return fmt;
           } else if (x === "json") {
@@ -1783,6 +2154,7 @@ export function fromV1ScrapeOptions(
                 type: "json",
                 schema: opts.schema,
                 prompt: opts.prompt,
+                checkPromptInjection: opts.checkPromptInjection ?? false,
               };
               return includesFormat(v1ScrapeOptions.formats as any, "extract")
                 ? null
@@ -1803,6 +2175,10 @@ export function fromV1ScrapeOptions(
             return { type: "screenshot" as const, fullPage: true };
           } else if (x === "branding") {
             return { type: "branding" as const };
+          } else if (x === "product") {
+            return { type: "product" as const };
+          } else if (x === "menu") {
+            return { type: "menu" as const };
           } else {
             return x;
           }
@@ -1811,12 +2187,13 @@ export function fromV1ScrapeOptions(
       parsers:
         v1ScrapeOptions.parsePDF !== undefined
           ? v1ScrapeOptions.parsePDF
-            ? ["pdf"]
+            ? ["pdf", "image"]
             : []
           : undefined,
     }),
     internalOptions: {
       teamId,
+      orgId: null,
       v1Agent: v1ScrapeOptions.agent,
       v1JSONSystemPrompt: (
         v1ScrapeOptions.jsonOptions || v1ScrapeOptions.extract
@@ -1879,6 +2256,53 @@ const pdfCategoryOptions = z.strictObject({
   type: z.literal("pdf"),
 });
 
+const developerCategoryOptions = z.strictObject({
+  type: z.literal("developer"),
+});
+
+const developerCategoryAliases = new Set([
+  "repo",
+  "code",
+  "developer",
+  "docs",
+  "devdex",
+  "repo_search",
+  "developer_index",
+]);
+
+function isDeveloperCategoryAlias(value: unknown): value is string {
+  return typeof value === "string" && developerCategoryAliases.has(value);
+}
+
+function normalizeDeveloperCategoryAliases(value: unknown): unknown {
+  if (!Array.isArray(value)) return value;
+  let seenString = false;
+  let seenObject = false;
+  const normalized: unknown[] = [];
+  for (const category of value) {
+    if (isDeveloperCategoryAlias(category)) {
+      if (seenString) continue;
+      seenString = true;
+      normalized.push("developer");
+    } else if (
+      typeof category === "object" &&
+      category !== null &&
+      isDeveloperCategoryAlias((category as { type?: unknown }).type)
+    ) {
+      if (Object.keys(category).length === 1) {
+        if (seenObject) continue;
+        seenObject = true;
+        normalized.push({ type: "developer" });
+      } else {
+        normalized.push({ ...category, type: "developer" });
+      }
+    } else {
+      normalized.push(category);
+    }
+  }
+  return normalized;
+}
+
 const searchDomainSchema = z
   .string()
   .trim()
@@ -1913,22 +2337,25 @@ export const searchRequestSchema = z
       .optional()
       .prefault(["web"]),
     categories: z
-      .union([
-        // Array of strings (simple format)
-        z.array(z.enum(["github", "research", "pdf"])),
-        // Array of objects (advanced format)
-        z.array(
-          z.union([
-            githubCategoryOptions,
-            researchCategoryOptions,
-            pdfCategoryOptions,
-          ]),
-        ),
-      ])
+      .preprocess(
+        normalizeDeveloperCategoryAliases,
+        z.union([
+          z.array(z.enum(["github", "research", "pdf", "developer"])),
+          z.array(
+            z.union([
+              githubCategoryOptions,
+              researchCategoryOptions,
+              pdfCategoryOptions,
+              developerCategoryOptions,
+            ]),
+          ),
+        ]),
+      )
       .optional(),
     includeDomains: z.array(searchDomainSchema).optional(),
     excludeDomains: z.array(searchDomainSchema).optional(),
     lang: z.string().optional().prefault("en"),
+    safe: z.boolean().optional(),
     enterprise: z.array(z.enum(["default", "anon", "zdr"])).optional(),
     country: z.string().optional(),
     location: z.string().optional(),
@@ -1937,7 +2364,12 @@ export const searchRequestSchema = z
     timeout: z.int().positive().finite().prefault(60000),
     ignoreInvalidURLs: z.boolean().optional().prefault(false),
     asyncScraping: z.boolean().optional().prefault(false),
+    // Replace each result's snippet with query-relevant highlights pulled from
+    // our index. When omitted, the caller integration and rollout cohort decide
+    // whether generated highlights are returned or only run in shadow mode.
+    highlights: z.boolean().optional(),
     __searchPreviewToken: z.string().optional(),
+    threatProtection: threatProtectionOverrideSchema.optional(),
     scrapeOptions: baseScrapeOptions
       .extend({
         formats: z
@@ -1959,6 +2391,8 @@ export const searchRequestSchema = z
                 z.strictObject({ type: z.literal("links") }),
                 z.strictObject({ type: z.literal("images") }),
                 z.strictObject({ type: z.literal("summary") }),
+                z.strictObject({ type: z.literal("product") }),
+                z.strictObject({ type: z.literal("menu") }),
                 jsonFormatWithOptions,
                 questionFormatWithOptions,
                 highlightsFormatWithOptions,
@@ -1986,6 +2420,15 @@ export const searchRequestSchema = z
     x => !(x.includeDomains?.length && x.excludeDomains?.length),
     "includeDomains and excludeDomains cannot both be specified",
   )
+  .refine(x => {
+    const categories = x.categories ?? [];
+    const hasDeveloper = categories.some(category =>
+      typeof category === "string"
+        ? category === "developer"
+        : category.type === "developer",
+    );
+    return !hasDeveloper || categories.length === 1;
+  }, "the developer category cannot be combined with other categories")
   .refine(x => waitForRefine(x.scrapeOptions), waitForRefineOpts)
   .transform(x => {
     const country =
@@ -2048,6 +2491,10 @@ export const searchRequestSchema = z
             case "pdf":
               return {
                 type: "pdf" as const,
+              };
+            case "developer":
+              return {
+                type: "developer" as const,
               };
             default:
               return { type: c as any };
@@ -2125,6 +2572,29 @@ const missingContentEntrySchema = z.strictObject({
   description: z.string().trim().max(2000).optional(),
 });
 
+function hasSubstantiveSearchFeedback(data: {
+  rating: "good" | "bad" | "partial";
+  valuableSources?: unknown[];
+  missingContent?: unknown[];
+  querySuggestions?: string;
+}): boolean {
+  const hasSources = (data.valuableSources?.length ?? 0) > 0;
+  const hasMissing = (data.missingContent?.length ?? 0) > 0;
+  const hasSuggestions =
+    !!data.querySuggestions && data.querySuggestions.length > 0;
+
+  switch (data.rating) {
+    case "good":
+      return hasSources;
+    case "partial":
+      return hasSources || hasMissing;
+    case "bad":
+      return hasMissing || hasSuggestions;
+  }
+
+  return false;
+}
+
 export const searchFeedbackSchema = z
   .strictObject({
     rating: z.enum(["good", "bad", "partial"]),
@@ -2142,27 +2612,10 @@ export const searchFeedbackSchema = z
     origin: z.string().optional().prefault("api"),
     integration: integrationSchema.optional().transform(val => val || null),
   })
-  .refine(
-    data => {
-      const hasSources = (data.valuableSources?.length ?? 0) > 0;
-      const hasMissing = (data.missingContent?.length ?? 0) > 0;
-      const hasSuggestions =
-        !!data.querySuggestions && data.querySuggestions.length > 0;
-
-      switch (data.rating) {
-        case "good":
-          return hasSources;
-        case "partial":
-          return hasSources || hasMissing;
-        case "bad":
-          return hasMissing || hasSuggestions;
-      }
-    },
-    {
-      message:
-        "Feedback must be substantive. 'good' requires at least one valuableSources entry; 'partial' requires valuableSources or at least one missingContent entry; 'bad' requires at least one missingContent entry or querySuggestions.",
-    },
-  );
+  .refine(data => hasSubstantiveSearchFeedback(data), {
+    message:
+      "Feedback must be substantive. 'good' requires at least one valuableSources entry; 'partial' requires valuableSources or at least one missingContent entry; 'bad' requires at least one missingContent entry or querySuggestions.",
+  });
 
 export type SearchFeedbackRequest = z.infer<typeof searchFeedbackSchema>;
 export type SearchFeedbackRequestInput = z.input<typeof searchFeedbackSchema>;
@@ -2179,6 +2632,119 @@ export type SearchFeedbackErrorCode =
 
 export type SearchFeedbackResponse =
   | (ErrorResponse & { feedbackErrorCode?: SearchFeedbackErrorCode })
+  | {
+      success: true;
+      feedbackId: string;
+      creditsRefunded: number;
+      alreadySubmitted?: boolean;
+      dailyCapReached?: boolean;
+      creditsRefundedToday?: number;
+      dailyRefundCap?: number;
+      warning?: string;
+    };
+
+// =============================================
+// Generic Endpoint Feedback
+// =============================================
+
+const endpointFeedbackEndpointSchema = z.enum([
+  "search",
+  "scrape",
+  "parse",
+  "map",
+]);
+
+export type EndpointFeedbackEndpoint = z.infer<
+  typeof endpointFeedbackEndpointSchema
+>;
+
+const feedbackIssueSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(80)
+  .regex(
+    /^[a-z0-9][a-z0-9_-]*$/,
+    "Issue codes must use lowercase letters, numbers, underscores, or hyphens",
+  );
+
+const MAX_FEEDBACK_METADATA_BYTES = 8 * 1024;
+const feedbackMetadataSchema = z
+  .record(z.string(), z.unknown())
+  .refine(
+    value =>
+      new TextEncoder().encode(JSON.stringify(value)).length <=
+      MAX_FEEDBACK_METADATA_BYTES,
+    "metadata must be 8KB or smaller",
+  );
+
+export const endpointFeedbackSchema = z
+  .strictObject({
+    endpoint: endpointFeedbackEndpointSchema,
+    jobId: z.uuid(),
+    rating: z.enum(["good", "bad", "partial"]),
+    issues: z.array(feedbackIssueSchema).max(20).optional(),
+    tags: z.array(feedbackIssueSchema).max(20).optional(),
+    note: z.string().trim().max(4000).optional(),
+    valuableSources: z
+      .array(
+        z.strictObject({
+          url: searchFeedbackUrlSchema,
+          reason: z.string().trim().max(1000).optional(),
+        }),
+      )
+      .max(50)
+      .optional(),
+    missingContent: z.array(missingContentEntrySchema).max(50).optional(),
+    querySuggestions: z.string().trim().max(2000).optional(),
+    url: searchFeedbackUrlSchema.optional(),
+    pageNumbers: z.array(z.number().int().positive()).max(100).optional(),
+    metadata: feedbackMetadataSchema.optional(),
+    origin: z.string().optional().prefault("api"),
+    integration: integrationSchema.optional().transform(val => val || null),
+  })
+  .refine(
+    data => {
+      return (
+        (data.issues?.length ?? 0) > 0 ||
+        (data.tags?.length ?? 0) > 0 ||
+        (data.note?.length ?? 0) > 0 ||
+        (data.valuableSources?.length ?? 0) > 0 ||
+        (data.missingContent?.length ?? 0) > 0 ||
+        !!data.querySuggestions ||
+        !!data.url ||
+        (data.pageNumbers?.length ?? 0) > 0
+      );
+    },
+    {
+      message:
+        "Feedback must include at least one substantive signal: issues, note, sources, missingContent, querySuggestions, url, or pageNumbers.",
+    },
+  )
+  .refine(
+    data => data.endpoint !== "search" || hasSubstantiveSearchFeedback(data),
+    {
+      message:
+        "Search feedback must be substantive. 'good' requires at least one valuableSources entry; 'partial' requires valuableSources or at least one missingContent entry; 'bad' requires at least one missingContent entry or querySuggestions.",
+    },
+  );
+
+export type EndpointFeedbackRequest = z.infer<typeof endpointFeedbackSchema>;
+export type EndpointFeedbackRequestInput = z.input<
+  typeof endpointFeedbackSchema
+>;
+
+export type EndpointFeedbackErrorCode =
+  | "JOB_NOT_FOUND"
+  | "FEEDBACK_WINDOW_EXPIRED"
+  | "PREVIEW_TEAM_NOT_ALLOWED"
+  | "TEAM_OPTED_OUT"
+  | "INVALID_BODY"
+  | "DB_DISABLED"
+  | "INTERNAL";
+
+export type EndpointFeedbackResponse =
+  | (ErrorResponse & { feedbackErrorCode?: EndpointFeedbackErrorCode })
   | {
       success: true;
       feedbackId: string;

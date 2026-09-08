@@ -28,6 +28,11 @@ import {
   autumnService,
   CREDITS_FEATURE_ID,
 } from "../services/autumn/autumn.service";
+import { getTeamBalance } from "../services/autumn/usage";
+import { getThirdPartyDataTermsRequiredResponse } from "../lib/exchange";
+import { getExchangeAccessForRequestBody } from "../lib/exchange-request";
+import { getScrapeZDR } from "../lib/zdr-helpers";
+import { isAgentInteropSecretValid } from "../lib/agent-interop";
 
 export function checkCreditsMiddleware(
   _minimum?: number,
@@ -41,7 +46,7 @@ export function checkCreditsMiddleware(
         req.body &&
         (req.body as any).__agentInterop &&
         (req.body as any).__agentInterop.auth &&
-        (req.body as any).__agentInterop.auth === config.AGENT_INTEROP_SECRET &&
+        isAgentInteropSecretValid((req.body as any).__agentInterop.auth) &&
         (req.body as any).__agentInterop.shouldBill === false
       ) {
         return next();
@@ -70,16 +75,33 @@ export function checkCreditsMiddleware(
             });
           }
 
-          // Enforce 50-credit cap for unverified agent keys
+          // Enforce 50-credit cap for unverified agent keys. Autumn is the
+          // source of truth for credit usage: getTeamBalance().usage is the
+          // team's credits used this period. If Autumn is unavailable we fail
+          // open (skip the cap), matching the Autumn-outage behavior of the
+          // main credit check below.
           const UNVERIFIED_CREDIT_LIMIT = 50;
-          if (req.acuc.adjusted_credits_used >= UNVERIFIED_CREDIT_LIMIT) {
+          let unverifiedCreditsUsed: number | null = null;
+          try {
+            const balance = await getTeamBalance(req.auth.team_id);
+            unverifiedCreditsUsed = balance?.usage ?? 0;
+          } catch (balanceError) {
+            logger.warn(
+              "Failed to fetch Autumn balance for unverified agent-key cap; failing open",
+              { error: balanceError, teamId: req.auth.team_id },
+            );
+          }
+          if (
+            unverifiedCreditsUsed !== null &&
+            unverifiedCreditsUsed >= UNVERIFIED_CREDIT_LIMIT
+          ) {
             return res.status(402).json({
               success: false,
               error: "unverified_credit_limit_reached",
               message:
                 "This agent key has used its 50 unverified credits. Ask the account holder to confirm the key to unlock full access.",
               credit_limit: UNVERIFIED_CREDIT_LIMIT,
-              credits_used: req.acuc.adjusted_credits_used,
+              credits_used: unverifiedCreditsUsed,
               sponsor_status: "pending",
               login_url: "https://firecrawl.dev/signin",
               upgrade_url: "https://firecrawl.dev/pricing",
@@ -125,6 +147,7 @@ export function checkCreditsMiddleware(
         properties: {
           source: "checkCreditsMiddleware",
           path: req.path,
+          apiKeyId: req.acuc?.api_key_id ?? null,
         },
         featureId,
       });
@@ -144,19 +167,41 @@ export function checkCreditsMiddleware(
       const remainingCredits = success ? Infinity : autumnResult.remaining;
       req.account = { remainingCredits };
       if (!success) {
+        const requestedLimit = Number((req.body as any)?.limit);
+        const clampedLimit = Math.min(requestedLimit, remainingCredits);
         if (
           !_minimum &&
           req.body &&
           (req.body as any).limit !== undefined &&
-          remainingCredits > 0
+          Number.isFinite(clampedLimit) &&
+          clampedLimit > 0
         ) {
-          logger.warn("Adjusting limit to remaining credits", {
+          // `remaining` is the team's credit balance, and a per-API-key spend
+          // limit never lowers it, so a key over its own cap still reports a
+          // healthy balance here. Re-check the clamped limit so only a genuinely
+          // low team balance gets shrunk to fit; a per-key denial falls through
+          // to the 402 below. A null re-check keeps the fail-open behavior.
+          const clampedResult = await autumnService.checkCredits({
             teamId: req.auth.team_id,
-            remainingCredits,
-            request: req.body,
+            value: clampedLimit,
+            properties: {
+              source: "checkCreditsMiddleware:clamp",
+              path: req.path,
+              apiKeyId: req.acuc?.api_key_id ?? null,
+            },
+            featureId,
           });
-          (req.body as any).limit = remainingCredits;
-          return next();
+
+          if (clampedResult === null || clampedResult.allowed) {
+            logger.warn("Adjusting limit to remaining credits", {
+              teamId: req.auth.team_id,
+              remainingCredits,
+              clampedLimit,
+              request: req.body,
+            });
+            (req.body as any).limit = clampedLimit;
+            return next();
+          }
         }
 
         const currencyName = req.acuc?.is_extract ? "tokens" : "credits";
@@ -196,9 +241,17 @@ export function checkCreditsMiddleware(
 
 export function authMiddleware(
   rateLimiterMode: RateLimiterMode,
+  options: {
+    allowKeyless?: boolean | ((req: RequestWithMaybeAuth) => boolean);
+  } = {},
 ): (req: RequestWithMaybeAuth, res: Response, next: NextFunction) => void {
   return (req, res, next) => {
     (async () => {
+      const allowKeyless =
+        typeof options.allowKeyless === "function"
+          ? options.allowKeyless(req)
+          : options.allowKeyless;
+
       let currentRateLimiterMode = rateLimiterMode;
       if (
         currentRateLimiterMode === RateLimiterMode.Extract &&
@@ -211,14 +264,24 @@ export function authMiddleware(
       //   currentRateLimiterMode = RateLimiterMode.ScrapeAgentPreview;
       // }
 
-      const auth = await authenticateUser(req, res, currentRateLimiterMode);
+      const auth = await authenticateUser(req, res, currentRateLimiterMode, {
+        ...options,
+        allowKeyless,
+      });
 
       if (!auth.success) {
         if (!res.headersSent) {
-          if (auth.status === 401) applyAgentAuthDiscoveryHeader(res);
-          return res
-            .status(auth.status)
-            .json({ success: false, error: auth.error });
+          if (auth.status === 401 || auth.agentAuthDiscovery) {
+            applyAgentAuthDiscoveryHeader(res);
+          }
+          return res.status(auth.status).json({
+            success: false,
+            error: auth.error,
+            ...(auth.keylessReason ? { reason: auth.keylessReason } : {}),
+            ...(auth.retryAfterSeconds
+              ? { retry_after_seconds: auth.retryAfterSeconds }
+              : {}),
+          });
         } else {
           return;
         }
@@ -228,13 +291,6 @@ export function authMiddleware(
 
       req.auth = { team_id, org_id };
       req.acuc = chunk ?? undefined;
-      if (chunk) {
-        req.account = {
-          remainingCredits: chunk.price_should_be_graceful
-            ? chunk.remaining_credits + chunk.price_credits
-            : chunk.remaining_credits,
-        };
-      }
       next();
     })().catch(err => next(err));
   };
@@ -265,21 +321,72 @@ export function blocklistMiddleware(
   res: Response,
   next: NextFunction,
 ) {
-  if (
-    typeof req.body.url === "string" &&
-    isUrlBlocked(req.body.url, req.acuc?.flags ?? null, {
-      team_id: req.acuc?.team_id ?? null,
-      origin: typeof req.body.origin === "string" ? req.body.origin : null,
-    })
-  ) {
-    if (!res.headersSent) {
-      return res.status(403).json({
-        success: false,
-        error: UNSUPPORTED_SITE_MESSAGE,
-      });
+  return blocklistGate(req, res, next, { exchange: false });
+}
+
+/**
+ * Blocklist gate for single-URL scrape-shaped routes (scrape, crawl), where
+ * an Exchange-eligible URL may bypass the blocklist because the exchange
+ * engine can serve it. Everything else (map, search, batch scrape, monitors)
+ * keeps plain blocklist behavior - batch stays out until its jobs carry the
+ * access flags the worker-side recheck needs.
+ */
+export function scrapeBlocklistMiddleware(
+  req: RequestWithMaybeACUC<any, any, any>,
+  res: Response,
+  next: NextFunction,
+) {
+  return blocklistGate(req, res, next, { exchange: true });
+}
+
+function blocklistGate(
+  req: RequestWithMaybeACUC<any, any, any>,
+  res: Response,
+  next: NextFunction,
+  options: { exchange: boolean },
+) {
+  (async () => {
+    const zeroDataRetention =
+      getScrapeZDR(req.acuc?.flags) === "forced" ||
+      req.body?.zeroDataRetention === true;
+    const exchangeAccess =
+      options.exchange &&
+      typeof req.body.url === "string" &&
+      (await getExchangeAccessForRequestBody({
+        body: req.body,
+        flags: req.acuc?.flags ?? null,
+        url: req.body.url,
+        zeroDataRetention,
+      }));
+    const canUseExchange =
+      typeof exchangeAccess === "object" && exchangeAccess.allowed;
+
+    if (typeof exchangeAccess === "object" && exchangeAccess.termsRequired) {
+      if (!res.headersSent) {
+        return res
+          .status(403)
+          .json(getThirdPartyDataTermsRequiredResponse(exchangeAccess.terms));
+      }
     }
-  }
-  next();
+
+    if (
+      typeof req.body.url === "string" &&
+      !canUseExchange &&
+      isUrlBlocked(req.body.url, req.acuc?.flags ?? null, {
+        team_id: req.acuc?.team_id ?? null,
+        org_id: req.acuc?.org_id ?? null,
+        origin: typeof req.body.origin === "string" ? req.body.origin : null,
+      })
+    ) {
+      if (!res.headersSent) {
+        return res.status(403).json({
+          success: false,
+          error: UNSUPPORTED_SITE_MESSAGE,
+        });
+      }
+    }
+    next();
+  })().catch(err => next(err));
 }
 
 export function countryCheck(

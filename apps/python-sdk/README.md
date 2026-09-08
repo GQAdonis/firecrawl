@@ -58,6 +58,24 @@ doc = firecrawl.scrape('https://www.youtube.com/watch?v=dQw4w9WgXcQ', formats=['
 print(doc.video)
 ```
 
+### Product extraction
+
+Use the `product` format on product pages to deterministically pull structured product data (title, price, availability, variants). It is the deterministic counterpart to the LLM-based `json` format.
+
+```python
+doc = firecrawl.scrape('https://firecrawl.dev', formats=['product'])
+print(doc.product)
+```
+
+### Menu extraction
+
+Use the `menu` format on menu pages to deterministically pull structured menu data (merchant, sections, items, prices, availability). It is the deterministic counterpart to the LLM-based `json` format.
+
+```python
+doc = firecrawl.scrape('https://example.com/restaurant/menu', formats=['menu'])
+print(doc.menu)
+```
+
 ### Parsing uploaded files
 
 Use `parse` to upload local bytes/files (`html`, `pdf`, `docx`, etc.) as multipart form data and return the parsed document.
@@ -161,6 +179,114 @@ Use `map` to generate a list of URLs from a website. Options let you customize t
 map_result = firecrawl.map('https://firecrawl.dev')
 print(map_result)
 ```
+
+### Search
+
+Use `search` to search the web and optionally scrape the results in the same call.
+
+```python
+# Search the web (v2):
+results = firecrawl.search("what is retrieval augmented generation?", limit=5)
+for result in results.web or []:
+    print(result.url, "-", result.title)
+
+# Scrape every result as part of the search:
+results = firecrawl.search(
+    "firecrawl changelog",
+    limit=3,
+    scrape_options={"formats": ["markdown"]},
+)
+```
+
+Results are grouped by source: `.web`, `.news`, `.images` and `.developer`.
+
+Use `categories` to narrow web search to a kind of site:
+
+```python
+results = firecrawl.search("nanopore basecalling accuracy", categories=["research"])
+```
+
+> **`categories=["research"]` is a website filter, not the paper index.** It
+> restricts ordinary web search to roughly 14 academic domains (arxiv.org,
+> pubmed.ncbi.nlm.nih.gov, nature.com, biorxiv.org, ...) and returns web page
+> results. To search papers themselves, use `search_papers` below.
+
+### Developer search
+
+Use `developer_search` for the dedicated developer index and its complete
+filter and response contract. Generic `search(categories=["developer"])`
+returns only the first passage as a description and does not accept these
+filters.
+
+```python
+evidence = firecrawl.developer_search(
+    "configure retry backoff",
+    repos=["firecrawl/firecrawl"],
+    types=["issue", "pull_request", "readme"],
+    passages=3,
+    language="TypeScript",
+    license="MIT",
+)
+
+for result in evidence.results:
+    # Result kind is the id prefix; the API intentionally omits a type field.
+    print(result.id, result.license)
+    for passage in result.passages:
+        print(passage.text, passage.citation_url)
+print(evidence.repos)  # indexed-status echoes for requested repos
+```
+
+`developer_search` also supports `sources`, `topic`, `min_stars`, `max_stars`,
+`archived`, `fork`, and `skills="only"`. Supplying both `repos` and `sources`
+OR-combines GitHub-backed and documentation results.
+
+### Research / paper search
+
+Use `search_papers` to search Firecrawl's research paper index: ~43M paper
+abstracts, roughly 90% biomedical and life sciences (PubMed, bioRxiv, medRxiv),
+plus arXiv for physics, mathematics and computer science.
+
+```python
+# Search the paper index (semantic search over abstracts):
+papers = firecrawl.search_papers(
+    "CRISPR base editing off-target effects in primary human T cells",
+    k=10,
+)
+for paper in papers["results"]:
+    print(paper["primaryId"], "-", paper["title"])
+
+# Inspect one paper's metadata (accepts pmid:, pmcid:, doi: or arxiv: ids):
+paper = firecrawl.inspect_paper("pmid:<id>")
+
+# Read the passages inside a paper that answer a specific question:
+passages = firecrawl.read_paper(
+    "pmid:<id>",
+    "what was the primary endpoint and the reported hazard ratio?",
+    k=4,
+)
+
+# Expand along the citation graph, re-ranked for your stated intent:
+related = firecrawl.related_papers(
+    "pmid:<id>",
+    intent="replication attempts in larger cohorts",
+    k=20,
+)
+```
+
+> **`search_github` is deprecated.** The research index GitHub endpoint stops
+> responding after 2026-11-03. Use `developer_search` instead: it searches
+> GitHub issues, pull requests and readmes plus curated documentation sources,
+> returns matched passages, and adds filters for repo, language, license and
+> stars. It does not carry over the `scores` breakdown or the
+> `resultType: "web"` fallback results. See
+> [the developer index docs](https://docs.firecrawl.dev/features/developer).
+
+> **Response keys are camelCase.** Unlike the rest of the SDK, the research
+> methods return the raw JSON body as a `dict` — they are not parsed into typed
+> models and not normalized to snake_case. Expect `paperId`, `primaryId`,
+> `createdDate`, `articleRank`, `poolSize`, and so on.
+
+Every method above is also available on `AsyncFirecrawl` with the same name.
 
 ### Scrape-bound interactive browsing (v2)
 

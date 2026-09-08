@@ -82,13 +82,13 @@ Before using the Java SDK, ensure you have the following installed:
 ### Gradle (Kotlin DSL)
 
 ```kotlin
-implementation("com.firecrawl:firecrawl-java:1.6.0")
+implementation("com.firecrawl:firecrawl-java:1.16.0")
 ```
 
 ### Gradle (Groovy)
 
 ```groovy
-implementation 'com.firecrawl:firecrawl-java:1.6.0'
+implementation 'com.firecrawl:firecrawl-java:1.16.0'
 ```
 
 ### Maven
@@ -97,7 +97,7 @@ implementation 'com.firecrawl:firecrawl-java:1.6.0'
 <dependency>
     <groupId>com.firecrawl</groupId>
     <artifactId>firecrawl-java</artifactId>
-    <version>1.6.0</version>
+    <version>1.16.0</version>
 </dependency>
 ```
 
@@ -202,6 +202,32 @@ Document doc = client.scrape("https://example.com/product",
         .build());
 
 System.out.println(doc.getJson());
+```
+
+#### Product Extraction
+
+Use the `product` format to get structured product data (title, brand, and variants, each with their own price and availability) from product pages, available on the document's `getProduct()`. It is the deterministic counterpart to the LLM-powered `json` format.
+
+```java
+Document doc = client.scrape("https://example.com/product",
+    ScrapeOptions.builder()
+        .formats(List.of("product"))
+        .build());
+
+System.out.println(doc.getProduct());
+```
+
+#### Menu Extraction
+
+Use the `menu` format to get structured menu data (merchant profile plus ordered sections, each holding items with their own price, availability, and images) from restaurant and menu pages, available on the document's `getMenu()`.
+
+```java
+Document doc = client.scrape("https://example.com/menu",
+    ScrapeOptions.builder()
+        .formats(List.of("menu"))
+        .build());
+
+System.out.println(doc.getMenu());
 ```
 
 #### Scrape-Bound Interactive Session
@@ -404,14 +430,14 @@ gradle build
 
 ```bash
 gradle jar
-# Output: build/libs/firecrawl-java-1.6.0.jar
+# Output: build/libs/firecrawl-java-1.16.0.jar
 ```
 
 ### Install Locally
 
 ```bash
 gradle publishToMavenLocal
-# Now available as: com.firecrawl:firecrawl-java:1.6.0 in local Maven repository
+# Now available as: com.firecrawl:firecrawl-java:1.16.0 in local Maven repository
 ```
 
 ## Running Tests

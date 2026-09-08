@@ -34,7 +34,10 @@ export class HttpClient {
       baseURL: this.apiUrl,
       timeout: options.timeoutMs ?? 300000,
       headers: {
-        Authorization: `Bearer ${this.apiKey}`,
+        // Omit the Authorization header entirely when no API key is set so that
+        // scrape/search/interact can use the keyless free tier (the cloud only
+        // grants it when no Authorization header is present).
+        ...(this.apiKey ? { Authorization: `Bearer ${this.apiKey}` } : {}),
       },
       transitional: { clarifyTimeoutError: true },
     });
@@ -46,6 +49,12 @@ export class HttpClient {
 
   getApiKey(): string {
     return this.apiKey;
+  }
+
+  /** The client-wide default request timeout, for callers that need to
+   * extend a specific request beyond it (e.g. scrape auto-resume). */
+  getTimeoutMs(): number {
+    return (this.instance.defaults.timeout as number | undefined) ?? 300000;
   }
 
   private async request<T = any>(

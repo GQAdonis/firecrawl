@@ -24,6 +24,13 @@ const MAX_STEPS = 25;
 const SNAPSHOT_TIMEOUT = 15;
 const SNAPSHOT_MAX_CHARS = 40_000;
 
+// Vertex is the preferred provider so usage is traceable via Vertex billing
+// labels; the GenAI (Gemini) API is only a fallback when Vertex credentials
+// aren't configured (e.g. self-hosted). Mirrors services/monitoring/search/tuning.ts.
+function hasVertex(): boolean {
+  return Boolean(config.VERTEX_CREDENTIALS);
+}
+
 // ---------------------------------------------------------------------------
 // Debug log
 // ---------------------------------------------------------------------------
@@ -181,6 +188,30 @@ async function takeSnapshot(browserId: string): Promise<string> {
   }
 }
 
+/**
+ * Keep a single foregrounded content tab, closing agent-browser's stray
+ * about:blank tab (it safely falls back to the surviving tab).
+ */
+async function syncTabs(browserId: string): Promise<void> {
+  try {
+    await browserServiceRequest("POST", `/browsers/${browserId}/exec`, {
+      code: [
+        `const ctx = page.context();`,
+        `const pages = ctx.pages();`,
+        `if (pages.length > 1) {`,
+        `  const target = pages.find(p => { const u = p.url(); return u && u !== 'about:blank'; }) || pages[pages.length - 1];`,
+        `  for (const p of pages) { if (p !== target) await p.close().catch(() => {}); }`,
+        `  page = target;`,
+        `}`,
+        `await page.bringToFront();`,
+      ].join("\n"),
+      language: "node",
+      timeout: 5,
+      origin: "tab_sync",
+    });
+  } catch {}
+}
+
 // ---------------------------------------------------------------------------
 // Main agent — tool-calling loop via AI SDK
 // ---------------------------------------------------------------------------
@@ -190,7 +221,6 @@ interface BrowserAgentTraceContext {
   scrapeId: string;
   teamId: string;
   orgId?: string;
-  subUserId?: string;
   zeroDataRetention?: boolean;
   scrapeUrl?: string;
   targetUrl?: string;
@@ -212,6 +242,11 @@ export async function executePromptViaBrowserAgent(
   debugLog.add(`Browser: ${browserId}`);
   debugLog.add(`Prompt:  ${prompt}\n`);
   logger.info("Agent debug log", { path: debugLog.getPath() });
+
+  // Prime agent-browser and consolidate tabs first: its first command of a
+  // session spawns an about:blank tab that would otherwise get snapshotted.
+  await getCurrentUrl(browserId);
+  await syncTabs(browserId);
 
   const [initialSnapshot, initialUrl] = await Promise.all([
     takeSnapshot(browserId),
@@ -258,23 +293,7 @@ export async function executePromptViaBrowserAgent(
         const output = (result.stdout || result.result || "").trim();
 
         // Ensure only one tab exists and it's in the foreground for live view
-        try {
-          await browserServiceRequest("POST", `/browsers/${browserId}/exec`, {
-            code: [
-              `const ctx = page.context();`,
-              `const pages = ctx.pages();`,
-              `if (pages.length > 1) {`,
-              `  const target = pages.find(p => { const u = p.url(); return u && u !== 'about:blank'; }) || pages[pages.length - 1];`,
-              `  for (const p of pages) { if (p !== target) await p.close().catch(() => {}); }`,
-              `  page = target;`,
-              `}`,
-              `await page.bringToFront();`,
-            ].join("\n"),
-            language: "node",
-            timeout: 5,
-            origin: "tab_sync",
-          });
-        } catch {}
+        await syncTabs(browserId);
 
         const elapsed = Date.now() - start;
 
@@ -322,7 +341,6 @@ export async function executePromptViaBrowserAgent(
           scrape_id: trace.scrapeId,
           team_id: trace.teamId,
           org_id: trace.orgId,
-          sub_user_id: trace.subUserId,
           browser_id: browserId,
           mode: "prompt",
           zeroDataRetention: trace.zeroDataRetention,
@@ -341,7 +359,7 @@ export async function executePromptViaBrowserAgent(
 
   try {
     const result = await generateText({
-      model: getModel("gemini-2.5-flash", "google"),
+      model: getModel("gemini-3.5-flash", hasVertex() ? "vertex" : "google"),
       system: SYSTEM_PROMPT,
       messages: [
         {
@@ -451,7 +469,6 @@ export async function executeCodeViaBrowserSession(
       scrape_id: trace.scrapeId,
       team_id: trace.teamId,
       org_id: trace.orgId,
-      sub_user_id: trace.subUserId,
       browser_id: browserId,
       mode: "code",
       zeroDataRetention: trace.zeroDataRetention,

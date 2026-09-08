@@ -22,6 +22,287 @@ type Document struct {
 	Warning        string                   `json:"warning,omitempty"`
 	ChangeTracking map[string]interface{}   `json:"changeTracking,omitempty"`
 	Branding       map[string]interface{}   `json:"branding,omitempty"`
+	Product        *ProductProfile          `json:"product,omitempty"`
+	Menu           *MenuProfile             `json:"menu,omitempty"`
+	// Pages is per-page PDF markdown, present only when parsers[].pages is true.
+	Pages []PdfPage `json:"pages,omitempty"`
+	// Blocks is typed PDF layout data, present only when parsers[].blocks is true.
+	Blocks []PdfPageBlocks `json:"blocks,omitempty"`
+}
+
+// PDFParser configures PDF parsing. Use in ScrapeOptions.Parsers / ParseOptions.Parsers.
+type PDFParser struct {
+	Type     string `json:"type"`
+	Mode     string `json:"mode,omitempty"`
+	MaxPages *int   `json:"maxPages,omitempty"`
+	Pages    *bool  `json:"pages,omitempty"`
+	Blocks   *bool  `json:"blocks,omitempty"`
+	// PageMarkers joins PDF pages in document.markdown with
+	// `\n\n---\n\n<!-- page N -->\n\n`. Markers appear between pages only;
+	// numbering may skip pages merged by cross-page stitching — use Pages
+	// when every physical page is needed. No new response field.
+	PageMarkers *bool `json:"pageMarkers,omitempty"`
+}
+
+// PdfPage is physical markdown for a single PDF page.
+type PdfPage struct {
+	PageNumber int    `json:"pageNumber"`
+	Markdown   string `json:"markdown"`
+}
+
+// PdfBlockConfidence is layout and OCR confidence for a PDF block.
+type PdfBlockConfidence struct {
+	Layout *float64 `json:"layout"`
+	OCR    *float64 `json:"ocr"`
+}
+
+// PdfBlockItem is a typed PDF layout block.
+type PdfBlockItem struct {
+	ID           string             `json:"id"`
+	Type         string             `json:"type"`
+	Label        *string            `json:"label"`
+	BBox         []float64          `json:"bbox"`
+	Content      string             `json:"content"`
+	MarkdownSpan []int              `json:"markdownSpan"`
+	ReadingOrder int                `json:"readingOrder"`
+	Source       *string            `json:"source"`
+	Confidence   PdfBlockConfidence `json:"confidence"`
+}
+
+// PdfPageBlocks is the typed layout for a single PDF page.
+type PdfPageBlocks struct {
+	PageNumber int            `json:"pageNumber"`
+	Width      *float64       `json:"width"`
+	Height     *float64       `json:"height"`
+	Status     string         `json:"status"`
+	Items      []PdfBlockItem `json:"items"`
+}
+
+// ProductProfile represents structured product data extracted from a page
+// via the `product` scrape format.
+type ProductProfile struct {
+	Title       string           `json:"title"`
+	Brand       string           `json:"brand,omitempty"`
+	Category    string           `json:"category,omitempty"`
+	URL         string           `json:"url"`
+	Description string           `json:"description,omitempty"`
+	Variants    []ProductVariant `json:"variants,omitempty"`
+}
+
+// ProductImage is a single product image.
+type ProductImage struct {
+	URL string `json:"url"`
+	Alt string `json:"alt,omitempty"`
+}
+
+// ProductPrice represents a price for a product or variant.
+type ProductPrice struct {
+	Amount    float64 `json:"amount"`
+	Currency  string  `json:"currency,omitempty"`
+	Formatted string  `json:"formatted,omitempty"`
+}
+
+// ProductAvailability represents stock availability for a product or variant.
+type ProductAvailability struct {
+	InStock bool   `json:"inStock"`
+	Text    string `json:"text,omitempty"`
+}
+
+// ProductSale represents sale information for a product variant.
+type ProductSale struct {
+	OriginalPrice ProductPrice `json:"originalPrice"`
+}
+
+// ProductVariant represents a single purchasable variant of a product.
+type ProductVariant struct {
+	ID           string              `json:"id,omitempty"`
+	SKU          string              `json:"sku,omitempty"`
+	Title        string              `json:"title,omitempty"`
+	Values       map[string]any      `json:"values,omitempty"`
+	Price        *ProductPrice       `json:"price,omitempty"`
+	Sale         *ProductSale        `json:"sale,omitempty"`
+	Availability ProductAvailability `json:"availability"`
+	Images       []ProductImage      `json:"images,omitempty"`
+}
+
+// MenuProfile represents structured menu data extracted from a page
+// via the `menu` scrape format.
+type MenuProfile struct {
+	IsMenu     bool          `json:"isMenu"`
+	Confidence float64       `json:"confidence"`
+	Merchant   MenuMerchant  `json:"merchant"`
+	Currency   string        `json:"currency,omitempty"`
+	Sections   []MenuSection `json:"sections,omitempty"`
+	SourceURL  string        `json:"sourceUrl"`
+}
+
+// MenuMerchant represents the merchant a menu belongs to.
+type MenuMerchant struct {
+	Name     string      `json:"name"`
+	Type     string      `json:"type,omitempty"`
+	Location interface{} `json:"location,omitempty"`
+}
+
+// MenuSection represents an ordered grouping of menu items.
+type MenuSection struct {
+	ID          string     `json:"id"`
+	Name        string     `json:"name"`
+	Description string     `json:"description,omitempty"`
+	Items       []MenuItem `json:"items,omitempty"`
+}
+
+// MenuItem represents a single item on a menu.
+type MenuItem struct {
+	ID           string              `json:"id"`
+	Name         string              `json:"name"`
+	Description  string              `json:"description,omitempty"`
+	Images       []MenuImage         `json:"images,omitempty"`
+	Price        *MenuPrice          `json:"price,omitempty"`
+	Availability MenuAvailability    `json:"availability"`
+	Dietary      []string            `json:"dietary,omitempty"`
+	Calories     *float64            `json:"calories,omitempty"`
+	OptionGroups []interface{}       `json:"optionGroups,omitempty"`
+	Identifiers  MenuItemIdentifiers `json:"identifiers"`
+	URL          string              `json:"url,omitempty"`
+	SourceURL    string              `json:"sourceUrl"`
+}
+
+// MenuImage is a single menu item image.
+type MenuImage struct {
+	URL string `json:"url"`
+	Alt string `json:"alt,omitempty"`
+}
+
+// MenuPrice represents a price for a menu item.
+type MenuPrice struct {
+	Amount    float64 `json:"amount"`
+	Currency  string  `json:"currency,omitempty"`
+	Formatted string  `json:"formatted,omitempty"`
+}
+
+// MenuAvailability represents stock availability for a menu item.
+type MenuAvailability struct {
+	InStock bool   `json:"inStock"`
+	Text    string `json:"text,omitempty"`
+}
+
+// MenuItemIdentifiers holds merchant-specific identifiers for a menu item.
+type MenuItemIdentifiers struct {
+	MerchantItemID string `json:"merchantItemId,omitempty"`
+}
+
+// PaperResult represents a ranked research paper result.
+type PaperResult struct {
+	PaperID   string                 `json:"paperId"`
+	PrimaryID string                 `json:"primaryId,omitempty"`
+	IDs       map[string]interface{} `json:"ids,omitempty"`
+	Title     string                 `json:"title,omitempty"`
+	Abstract  string                 `json:"abstract,omitempty"`
+	Score     *float64               `json:"score,omitempty"`
+	Year      *int                   `json:"year,omitempty"`
+	Authors   []string               `json:"authors,omitempty"`
+	Venue     string                 `json:"venue,omitempty"`
+	URL       string                 `json:"url,omitempty"`
+	Signals   map[string]interface{} `json:"signals,omitempty"`
+}
+
+// PaperMetadata represents paper metadata returned by inspect/read endpoints.
+type PaperMetadata struct {
+	PaperID     string                 `json:"paperId,omitempty"`
+	IDs         map[string]interface{} `json:"ids,omitempty"`
+	Title       string                 `json:"title,omitempty"`
+	Abstract    string                 `json:"abstract,omitempty"`
+	Authors     string                 `json:"authors,omitempty"`
+	Categories  []string               `json:"categories,omitempty"`
+	CreatedDate string                 `json:"createdDate,omitempty"`
+	UpdateDate  string                 `json:"updateDate,omitempty"`
+}
+
+// Passage is a relevant paper passage.
+type Passage struct {
+	Text     string                 `json:"text,omitempty"`
+	Section  string                 `json:"section,omitempty"`
+	Page     *int                   `json:"page,omitempty"`
+	Score    *float64               `json:"score,omitempty"`
+	Metadata map[string]interface{} `json:"metadata,omitempty"`
+}
+
+// SearchPapersResponse is returned by SearchPapers.
+type SearchPapersResponse struct {
+	Success bool          `json:"success"`
+	Results []PaperResult `json:"results"`
+}
+
+// PaperMetadataResponse is returned by InspectPaper.
+type PaperMetadataResponse struct {
+	Success bool          `json:"success"`
+	Paper   PaperMetadata `json:"paper"`
+}
+
+// ReadPaperResponse is returned by ReadPaper.
+type ReadPaperResponse struct {
+	Success  bool          `json:"success"`
+	Paper    PaperMetadata `json:"paper"`
+	PaperID  string        `json:"paperId,omitempty"`
+	Query    string        `json:"query,omitempty"`
+	Passages []Passage     `json:"passages,omitempty"`
+}
+
+// SimilarPapersResponse is returned by RelatedPapers.
+type SimilarPapersResponse struct {
+	Success   bool          `json:"success"`
+	Results   []PaperResult `json:"results"`
+	PoolSize  *int          `json:"poolSize,omitempty"`
+	Truncated bool          `json:"truncated"`
+	Note      *string       `json:"note,omitempty"`
+}
+
+// GitHubSearchItem represents a GitHub research search result.
+type GitHubSearchItem struct {
+	ResultType   string                 `json:"resultType,omitempty"`
+	Repo         string                 `json:"repo,omitempty"`
+	URL          string                 `json:"url,omitempty"`
+	PageType     string                 `json:"pageType,omitempty"`
+	Number       *int                   `json:"number,omitempty"`
+	SegmentCount *int                   `json:"segmentCount,omitempty"`
+	ReadmeURL    string                 `json:"readmeUrl,omitempty"`
+	Title        string                 `json:"title,omitempty"`
+	Snippet      string                 `json:"snippet,omitempty"`
+	ContentMD    string                 `json:"contentMd,omitempty"`
+	Scores       map[string]interface{} `json:"scores,omitempty"`
+}
+
+// GitHubSearchResponse is returned by SearchGitHub.
+type GitHubSearchResponse struct {
+	Success bool               `json:"success"`
+	Results []GitHubSearchItem `json:"results"`
+}
+
+// Research options for search-like endpoints.
+type SearchPapersOptions struct {
+	K          *int     `json:"k,omitempty"`
+	Authors    []string `json:"authors,omitempty"`
+	Categories []string `json:"categories,omitempty"`
+	From       string   `json:"from,omitempty"`
+	To         string   `json:"to,omitempty"`
+}
+
+// ReadPaperOptions configures ReadPaper.
+type ReadPaperOptions struct {
+	K *int `json:"k,omitempty"`
+}
+
+// RelatedPapersOptions configures RelatedPapers.
+type RelatedPapersOptions struct {
+	Mode   string   `json:"mode,omitempty"`
+	K      *int     `json:"k,omitempty"`
+	Rerank *bool    `json:"rerank,omitempty"`
+	Anchor []string `json:"anchor,omitempty"`
+}
+
+// SearchGitHubOptions configures SearchGitHub.
+type SearchGitHubOptions struct {
+	K *int `json:"k,omitempty"`
 }
 
 // CrawlResponse is returned when starting an async crawl.
@@ -107,6 +388,36 @@ type MapData struct {
 type MonitorSchedule struct {
 	Cron     string `json:"cron"`
 	Timezone string `json:"timezone,omitempty"`
+}
+
+// MonitorSearchTarget is a search monitor target. It is one variant of the
+// monitor target union (alongside scrape and crawl targets) used in the
+// Targets field of monitor requests and the Monitor struct.
+type MonitorSearchTarget struct {
+	ID             string   `json:"id,omitempty"`
+	Type           string   `json:"type"`
+	Queries        []string `json:"queries"`
+	SearchWindow   string   `json:"searchWindow,omitempty"`
+	IncludeDomains []string `json:"includeDomains,omitempty"`
+	ExcludeDomains []string `json:"excludeDomains,omitempty"`
+	MaxResults     *int     `json:"maxResults,omitempty"`
+}
+
+// MonitorSearchTargetResult is the per-target result for a search target on a
+// monitor check. It is one variant of the monitor target-result union
+// (alongside scrape and crawl results) found in a check's TargetResults.
+type MonitorSearchTargetResult struct {
+	TargetID        string   `json:"targetId"`
+	Type            string   `json:"type"`
+	SearchCompleted *bool    `json:"searchCompleted,omitempty"`
+	ResultCount     *int     `json:"resultCount,omitempty"`
+	Matches         *int     `json:"matches,omitempty"`
+	Summary         string   `json:"summary,omitempty"`
+	JudgeDegraded   *bool    `json:"judgeDegraded,omitempty"`
+	DegradedReason  *string  `json:"degradedReason,omitempty"`
+	SearchCredits   *float64 `json:"searchCredits,omitempty"`
+	JudgeCredits    *float64 `json:"judgeCredits,omitempty"`
+	ResultsJudged   *int     `json:"resultsJudged,omitempty"`
 }
 
 // MonitorCreateRequest creates a scheduled monitor.
@@ -312,6 +623,7 @@ type AgentStatusResponse struct {
 	Error       string      `json:"error,omitempty"`
 	Data        interface{} `json:"data,omitempty"`
 	Model       string      `json:"model,omitempty"`
+	Effort      string      `json:"effort,omitempty"`
 	ExpiresAt   string      `json:"expiresAt,omitempty"`
 	CreditsUsed *int        `json:"creditsUsed,omitempty"`
 }
@@ -319,6 +631,140 @@ type AgentStatusResponse struct {
 // IsDone returns true if the agent task has finished.
 func (a *AgentStatusResponse) IsDone() bool {
 	return a.Status == "completed" || a.Status == "failed" || a.Status == "cancelled"
+}
+
+// AgentTraceResponse is returned when fetching the event trace of an agent task.
+type AgentTraceResponse struct {
+	Success               bool                             `json:"success"`
+	ID                    string                           `json:"id,omitempty"`
+	Events                []AgentTraceEvent                `json:"events,omitempty"`
+	CreditsUsed           *int                             `json:"creditsUsed,omitempty"`
+	ActiveBrowserSessions []AgentTraceActiveBrowserSession `json:"activeBrowserSessions,omitempty"`
+	Error                 string                           `json:"error,omitempty"`
+}
+
+// AgentTraceActiveBrowserSession represents a live browser session attached to
+// an agent run.
+type AgentTraceActiveBrowserSession struct {
+	ID          string             `json:"id"`
+	LiveViewURL string             `json:"liveViewUrl,omitempty"`
+	Viewport    AgentTraceViewport `json:"viewport,omitempty"`
+}
+
+// AgentTraceViewport represents the viewport dimensions of a live browser session.
+type AgentTraceViewport struct {
+	Width  int `json:"width"`
+	Height int `json:"height"`
+}
+
+// AgentTraceEvent represents a single event in an agent run trace. The Type
+// field discriminates the event kind (e.g. "run.started", "tool_call.finished",
+// "artifact.updated"); only the fields relevant to that kind are set.
+type AgentTraceEvent struct {
+	Type             string                    `json:"type"`
+	SchemaVersion    int                       `json:"schemaVersion"`
+	EventID          string                    `json:"eventId"`
+	RunID            string                    `json:"runId"`
+	OccurredAt       string                    `json:"occurredAt"`
+	ProducerSequence int                       `json:"producerSequence"`
+	Agent            AgentTraceAgentIdentity   `json:"agent"`
+	Reason           string                    `json:"reason,omitempty"`
+	Outcome          string                    `json:"outcome,omitempty"`
+	Error            *AgentTraceError          `json:"error,omitempty"`
+	DurationMs       *int64                    `json:"durationMs,omitempty"`
+	SessionID        string                    `json:"sessionId,omitempty"`
+	Phase            string                    `json:"phase,omitempty"`
+	Message          string                    `json:"message,omitempty"`
+	Text             string                    `json:"text,omitempty"`
+	ToolCallID       string                    `json:"toolCallId,omitempty"`
+	ToolName         string                    `json:"toolName,omitempty"`
+	Parameters       interface{}               `json:"parameters,omitempty"`
+	Result           interface{}               `json:"result,omitempty"`
+	Artifact         *AgentTraceArtifactChange `json:"artifact,omitempty"`
+}
+
+// AgentTraceAgentIdentity identifies the agent that produced a trace event.
+type AgentTraceAgentIdentity struct {
+	ID       string `json:"id"`
+	Role     string `json:"role"`
+	Name     string `json:"name"`
+	ParentID string `json:"parentId,omitempty"`
+}
+
+// AgentTraceError represents an error attached to a trace event.
+type AgentTraceError struct {
+	Code      string `json:"code"`
+	Source    string `json:"source"`
+	Retryable bool   `json:"retryable"`
+	Message   string `json:"message"`
+}
+
+// AgentTraceArtifactChange describes the artifact mutation reported by an
+// "artifact.updated" trace event.
+type AgentTraceArtifactChange struct {
+	Kind             string   `json:"kind"`
+	ArtifactID       string   `json:"artifactId"`
+	Path             string   `json:"path,omitempty"`
+	SnapshotID       string   `json:"snapshotId"`
+	Change           string   `json:"change"`
+	ChangedFields    []string `json:"changedFields,omitempty"`
+	ItemCount        *int     `json:"itemCount,omitempty"`
+	SourceToolCallID string   `json:"sourceToolCallId,omitempty"`
+}
+
+// AgentSnapshotResponse is returned when fetching a snapshot of an agent task.
+type AgentSnapshotResponse struct {
+	Success    bool   `json:"success"`
+	ID         string `json:"id,omitempty"`
+	SnapshotID string `json:"snapshotId,omitempty"`
+	Snapshot   string `json:"snapshot,omitempty"`
+	Error      string `json:"error,omitempty"`
+}
+
+// ListAgentsOptions controls agent list pagination.
+type ListAgentsOptions struct {
+	// Before only returns agent runs created before this unix millisecond
+	// timestamp.
+	Before *int64
+}
+
+// AgentListItemSettings represents per-session settings attached to an agent
+// run.
+type AgentListItemSettings struct {
+	Hidden  bool   `json:"hidden"`
+	Starred bool   `json:"starred"`
+	Label   string `json:"label,omitempty"`
+}
+
+// AgentListItemOptions represents the options an agent run was started with.
+type AgentListItemOptions struct {
+	URLs   []string               `json:"urls,omitempty"`
+	Prompt string                 `json:"prompt,omitempty"`
+	Schema map[string]interface{} `json:"schema,omitempty"`
+	Model  string                 `json:"model,omitempty"`
+	Effort string                 `json:"effort,omitempty"`
+}
+
+// AgentListItem represents a single agent run in the agent list.
+type AgentListItem struct {
+	ID          string                `json:"id"`
+	CreatedAt   string                `json:"createdAt"`
+	TargetHint  string                `json:"targetHint"`
+	Origin      string                `json:"origin"`
+	Integration string                `json:"integration,omitempty"`
+	Settings    AgentListItemSettings `json:"settings"`
+	Status      string                `json:"status"`
+	Options     *AgentListItemOptions `json:"options,omitempty"`
+}
+
+// AgentListResponse is returned when listing agent runs.
+type AgentListResponse struct {
+	Success bool            `json:"success"`
+	Agents  []AgentListItem `json:"agents,omitempty"`
+	// Next is the absolute URL of the next page, only present when more pages
+	// exist.
+	Next  string `json:"next,omitempty"`
+	Error string `json:"error,omitempty"`
 }
 
 // BrowserCreateResponse is returned when creating a browser session.

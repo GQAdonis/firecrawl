@@ -5,7 +5,7 @@ import { setSentryServiceTag } from "./sentry";
 import * as Sentry from "@sentry/node";
 import { logger as _logger } from "../lib/logger";
 import { configDotenv } from "dotenv";
-import { ExtractResult } from "../lib/extract/extraction-service";
+import { ExtractResult } from "../lib/extract/types";
 import { updateExtract } from "../lib/extract/extract-redis";
 import { performExtraction_F0 } from "../lib/extract/fire-0/extraction-service-f0";
 import { createWebhookSender, WebhookEvent } from "./webhook";
@@ -20,7 +20,7 @@ import {
   shutdownExtractQueue,
   ExtractJobData,
 } from "./extract-queue";
-import { logExtract } from "./logging/log_job";
+import { logExtract, shutdownPubSubLogging } from "./logging/log_job";
 import { jobDurationSeconds } from "../lib/job-metrics";
 import { register } from "prom-client";
 
@@ -59,7 +59,6 @@ const processExtractJob = async (
     result = await performExtraction_F0(data.extractId, {
       request: data.request,
       teamId: data.teamId,
-      subId: data.subId ?? undefined,
       apiKeyId: data.apiKeyId ?? null,
     });
 
@@ -199,7 +198,15 @@ app.get("/metrics", async (_, res) => {
 });
 
 const workerPort = config.EXTRACT_WORKER_PORT || config.PORT;
-app.listen(workerPort, () => {
+app.listen(workerPort, (error?: Error) => {
+  if (error) {
+    _logger.error("Failed to start extract worker health endpoint", {
+      error,
+      port: workerPort,
+    });
+    throw error;
+  }
+
   _logger.info(
     `Extract worker health endpoint is running on port ${workerPort}`,
   );
@@ -208,6 +215,7 @@ app.listen(workerPort, () => {
 async function shutdown() {
   _logger.info("Shutting down extract worker...");
   await shutdownExtractQueue();
+  await shutdownPubSubLogging();
   _logger.info("Extract worker shut down");
   process.exit(0);
 }

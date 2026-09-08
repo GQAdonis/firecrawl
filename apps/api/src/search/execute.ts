@@ -13,8 +13,19 @@ import {
   mergeScrapedContent,
   calculateScrapeCredits,
 } from "./scrape";
+import { searchDeveloperCategory, wantsDeveloperCategory } from "./developer";
+import {
+  highlightsEnvReady,
+  runIndexedSearchHighlights,
+  searchHighlightsMode,
+} from "./highlights";
 import { trackSearchResults, trackSearchRequest } from "../lib/tracking";
 import type { BillingMetadata } from "../services/billing/types";
+import type { ThreatProtectionPolicy } from "../lib/threat-protection/types";
+import { checkUrlsAgainstThreatPolicy } from "../lib/threat-protection/request";
+import { calculateThreatScanCredits } from "../lib/scrape-billing";
+import { config } from "../config";
+import { logger as rootLogger } from "../lib/logger";
 
 interface SearchOptions {
   query: string;
@@ -24,18 +35,22 @@ interface SearchOptions {
   lang?: string;
   country?: string;
   location?: string;
+  safe?: boolean;
   sources: Array<{ type: string }>;
   categories?: CategoryOption[];
   includeDomains?: string[];
   excludeDomains?: string[];
   enterprise?: ("default" | "anon" | "zdr")[];
   scrapeOptions?: ScrapeOptions;
+  highlights?: boolean;
   timeout: number;
 }
 
 interface SearchContext {
   teamId: string;
+  orgId?: string | null;
   origin: string;
+  integration?: string | null;
   apiKeyId: number | null;
   flags: TeamFlags;
   requestId: string;
@@ -45,15 +60,28 @@ interface SearchContext {
   zeroDataRetention?: boolean;
   billing?: BillingMetadata;
   agentIndexOnly?: boolean;
+  keylessReserved?: boolean;
+  /** Effective threat protection policy; blocked domains are removed from results entirely. */
+  threatProtectionPolicy?: ThreatProtectionPolicy | null;
 }
 
 interface SearchExecuteResult {
   response: SearchV2Response;
   totalResultsCount: number;
+  developerResultsCount: number;
   searchCredits: number;
   scrapeCredits: number;
   totalCredits: number;
   shouldScrape: boolean;
+}
+
+function hasOnlyDeveloperCategory(categories?: CategoryOption[]): boolean {
+  if (!categories?.length) return false;
+  return categories.every(category =>
+    typeof category === "string"
+      ? category === "developer"
+      : category.type === "developer",
+  );
 }
 
 export async function executeSearch(
@@ -64,6 +92,7 @@ export async function executeSearch(
   const { query, limit, sources, categories, scrapeOptions } = options;
   const {
     teamId,
+    orgId,
     origin,
     apiKeyId,
     flags,
@@ -87,19 +116,76 @@ export async function executeSearch(
     },
   );
 
-  const searchResponse = (await search({
-    query: searchQuery,
-    logger,
-    advanced: false,
-    num_results: num_results_buffer,
-    tbs: options.tbs,
-    filter: options.filter,
-    lang: options.lang,
-    country: options.country,
-    location: options.location,
-    type: searchTypes,
-    enterprise: options.enterprise,
-  })) as SearchV2Response;
+  const wantsDeveloper = wantsDeveloperCategory(categories);
+  const developerResultsPromise = wantsDeveloper
+    ? searchDeveloperCategory(
+        { query, limit, teamId, timeout: options.timeout },
+        logger,
+      )
+    : null;
+
+  const searchResponse = hasOnlyDeveloperCategory(categories)
+    ? ({} as SearchV2Response)
+    : ((await search({
+        query: searchQuery,
+        logger,
+        requestId: context.requestId,
+        advanced: false,
+        num_results: num_results_buffer,
+        tbs: options.tbs,
+        filter: options.filter,
+        lang: options.lang,
+        country: options.country,
+        location: options.location,
+        safe: options.safe,
+        type: searchTypes,
+        enterprise: options.enterprise,
+      })) as SearchV2Response);
+  let developerResults = developerResultsPromise
+    ? await developerResultsPromise
+    : [];
+
+  // Threat protection: remove blocked results entirely — before
+  // slicing/counting, before scraping, and before returning. Checks are
+  // URL-level and deduped within this request; scan fees bill +2 per unique
+  // scanned URL (see calculateThreatScanCredits), charged as part of the
+  // search credits below.
+  let threatScanCredits = 0;
+  const threatPolicy = context.threatProtectionPolicy;
+  if (threatPolicy && threatPolicy.mode !== "off") {
+    const urlsToCheck = [
+      ...(searchResponse.web ?? []).map(x => x.url),
+      ...(searchResponse.news ?? []).map(x => x.url),
+      ...(searchResponse.images ?? []).map(x => x.url),
+      ...developerResults.map(x => x.url),
+    ].filter((x): x is string => !!x);
+
+    if (urlsToCheck.length > 0) {
+      const { decisionsByUrl } = await checkUrlsAgainstThreatPolicy(
+        urlsToCheck,
+        threatPolicy,
+        { teamId },
+      );
+      threatScanCredits = calculateThreatScanCredits(decisionsByUrl.values());
+      const isAllowed = (url: string | undefined | null): boolean => {
+        if (!url) return true;
+        const decision = decisionsByUrl.get(url);
+        return decision === undefined || decision.allowed;
+      };
+      if (searchResponse.web) {
+        searchResponse.web = searchResponse.web.filter(x => isAllowed(x.url));
+      }
+      if (searchResponse.news) {
+        searchResponse.news = searchResponse.news.filter(x => isAllowed(x.url));
+      }
+      if (searchResponse.images) {
+        searchResponse.images = searchResponse.images.filter(x =>
+          isAllowed(x.url),
+        );
+      }
+      developerResults = developerResults.filter(x => isAllowed(x.url));
+    }
+  }
 
   if (searchResponse.web && searchResponse.web.length > 0) {
     searchResponse.web = searchResponse.web.map(result => ({
@@ -140,10 +226,18 @@ export async function executeSearch(
     totalResultsCount += searchResponse.news.length;
   }
 
+  const developerResultsCount = developerResults.length;
+  totalResultsCount += developerResultsCount;
+
   const isZDR = options.enterprise?.includes("zdr");
   const creditsPerTenResults = isZDR ? 10 : 2;
+  // Threat protection scan fees ride on the search credits: they are part of
+  // serving the search itself (every result domain is scanned before
+  // filtering), so they bill against the same feature and show up in the
+  // request's creditsUsed.
   const searchCredits =
-    Math.ceil(totalResultsCount / 10) * creditsPerTenResults;
+    Math.ceil(totalResultsCount / 10) * creditsPerTenResults +
+    threatScanCredits;
   let scrapeCredits = 0;
 
   const shouldScrape =
@@ -152,12 +246,14 @@ export async function executeSearch(
   if (shouldScrape && scrapeOptions) {
     const itemsToScrape = getItemsToScrape(searchResponse, flags, {
       team_id: teamId,
+      org_id: orgId ?? null,
       origin,
     });
 
     if (itemsToScrape.length > 0) {
       const scrapeOpts = {
         teamId,
+        orgId: orgId ?? null,
         origin,
         timeout: options.timeout,
         scrapeOptions,
@@ -167,6 +263,8 @@ export async function executeSearch(
         requestId,
         billing,
         agentIndexOnly: context.agentIndexOnly,
+        keylessReserved: context.keylessReserved,
+        threatProtectionPolicy: threatPolicy ?? null,
       };
 
       const allDocsWithCostTracking = await scrapeSearchResults(
@@ -183,6 +281,59 @@ export async function executeSearch(
       );
       scrapeCredits = calculateScrapeCredits(allDocsWithCostTracking);
     }
+  }
+
+  // Every eligible request runs the same index-backed highlight path. MCP/CLI,
+  // explicit opt-ins, and rollout-selected cohorts await and apply the result;
+  // everyone else runs it in shadow without delaying or mutating the response.
+  // Runs after scraping (mergeScrapedContent rebuilds the result objects, so
+  // highlight mutations must come last to survive). Uses the user's original
+  // query, not the domain-filtered upstream query.
+  if (zeroDataRetention !== true && !isZDR && highlightsEnvReady()) {
+    const mode = searchHighlightsMode({
+      requested: options.highlights,
+      origin: context.origin,
+      integration: context.integration,
+      cohortKey:
+        context.apiKeyId !== null
+          ? `api-key:${context.apiKeyId}`
+          : `team:${context.teamId}`,
+      rolloutPercent: config.HIGHLIGHT_ROLLOUT_PERCENT,
+    });
+    const highlightRun = runIndexedSearchHighlights(
+      searchResponse,
+      query,
+      logger,
+      {
+        mode,
+        requestId: context.requestId,
+        teamId: context.teamId,
+      },
+    );
+
+    if (mode === "apply") {
+      await highlightRun;
+    } else {
+      void highlightRun.catch(error => {
+        rootLogger.warn("Search highlights shadow failed", {
+          canonicalLog: "search/highlights",
+          mode,
+          requestId: context.requestId,
+          teamId: context.teamId,
+          errorType: error instanceof Error ? error.name : "unknown",
+        });
+      });
+    }
+  }
+
+  if (wantsDeveloper) {
+    // The developer category is exclusive (schema-enforced), so these are
+    // the only results: they ARE the web group. Threat filtering above may
+    // have removed entries, so renumber the survivors.
+    searchResponse.web = developerResults.map((result, index) => ({
+      ...result,
+      position: index + 1,
+    }));
   }
 
   const scrapeFormats = scrapeOptions?.formats
@@ -226,6 +377,7 @@ export async function executeSearch(
   return {
     response: searchResponse,
     totalResultsCount,
+    developerResultsCount,
     searchCredits,
     scrapeCredits,
     totalCredits: searchCredits + scrapeCredits,

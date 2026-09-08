@@ -13,6 +13,7 @@ import {
   getCrawlQualifiedJobCount,
   getDoneJobsOrderedLength,
   getDoneJobsOrderedUntil,
+  getLastDoneJobTimestamp,
   isCrawlKickoffFinished,
 } from "../../lib/crawl-redis";
 import {
@@ -22,13 +23,14 @@ import {
 import { configDotenv } from "dotenv";
 import { logger } from "../../lib/logger";
 import { creditsBilledByCrawlId } from "../../db/rpc";
+import { dbRr } from "../../db/connection";
 import { getJobFromGCS } from "../../lib/gcs-jobs";
 import {
   scrapeQueue,
   NuQJob,
   NuQJobStatus,
   crawlGroup,
-} from "../../services/worker/nuq";
+} from "../../services/worker/nuq-router";
 import { ScrapeJobSingleUrls } from "../../types";
 import { redisEvictConnection } from "../../../src/services/redis";
 import { isBaseDomain, extractBaseDomain } from "../../lib/url-utils";
@@ -217,7 +219,7 @@ export async function crawlStatusController(
   );
 
   const creditsBilled = config.USE_DB_AUTHENTICATION
-    ? await creditsBilledByCrawlId(req.params.jobId).catch(() => null)
+    ? await creditsBilledByCrawlId(dbRr, req.params.jobId).catch(() => null)
     : null;
 
   // check if the crawl failed during kickoff (e.g. queue full)
@@ -254,6 +256,7 @@ export async function crawlStatusController(
 
   // if the crawl failed during kickoff, return immediately without fetching/processing jobs (there are none)
   if (outputBulkA.status === "failed" && crawlError) {
+    const createdAtMs = sc?.createdAt;
     return res.status(200).json({
       success: false,
       error: crawlError,
@@ -263,6 +266,11 @@ export async function crawlStatusController(
       creditsUsed: outputBulkA.creditsUsed ?? 0,
       expiresAt: (await getCrawlExpiry(req.params.jobId)).toISOString(),
       data: [],
+      ...(createdAtMs && {
+        createdAt: new Date(createdAtMs).toISOString(),
+        completedAt: new Date(createdAtMs).toISOString(),
+        duration: 0,
+      }),
     });
   }
 
@@ -319,7 +327,7 @@ export async function crawlStatusController(
     next:
       (outputBulkA.total ?? 0) > start + iteratedOver ||
       outputBulkA.status !== "completed"
-        ? `${req.protocol}://${req.get("host")}/v2/${isBatch ? "batch/scrape" : "crawl"}/${req.params.jobId}?skip=${start + iteratedOver}${req.query.limit ? `&limit=${req.query.limit}` : ""}`
+        ? `${req.protocol}://${req.host}/v2/${isBatch ? "batch/scrape" : "crawl"}/${req.params.jobId}?skip=${start + iteratedOver}${req.query.limit ? `&limit=${req.query.limit}` : ""}`
         : undefined,
   };
 
@@ -364,15 +372,34 @@ export async function crawlStatusController(
     }
   }
 
+  const status = outputBulkA.status ?? "scraping";
+  const createdAtMs = sc?.createdAt;
+  const lastDoneMs =
+    status !== "scraping"
+      ? await getLastDoneJobTimestamp(req.params.jobId)
+      : null;
+  const completedAtMs =
+    status === "completed" || status === "failed" || status === "cancelled"
+      ? (lastDoneMs ?? createdAtMs ?? null)
+      : null;
+  const durationSeconds = createdAtMs
+    ? Math.max(0, ((completedAtMs ?? Date.now()) - createdAtMs) / 1000)
+    : undefined;
+
   return res.status(200).json({
     success: true,
-    status: outputBulkA.status ?? "scraping",
+    status,
     completed: outputBulkA.completed ?? 0,
     total: outputBulkA.total ?? 0,
     creditsUsed: outputBulkA.creditsUsed ?? 0,
     expiresAt: (await getCrawlExpiry(req.params.jobId)).toISOString(),
     next: outputBulkB.next,
     data: outputBulkB.data,
+    ...(createdAtMs && { createdAt: new Date(createdAtMs).toISOString() }),
+    ...(completedAtMs && {
+      completedAt: new Date(completedAtMs).toISOString(),
+    }),
+    ...(durationSeconds !== undefined && { duration: durationSeconds }),
     ...(warning && { warning }),
   });
 }

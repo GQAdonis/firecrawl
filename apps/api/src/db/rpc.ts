@@ -31,15 +31,16 @@ export type AuthCreditUsageChunkRow = Record<string, any> & {
 export async function authCreditUsageChunk(
   database: DB,
   input_key: string,
-  i_is_extract: boolean,
+  input_credential_purpose: "general" | "hosted_mcp_oauth" = "general",
 ): Promise<AuthCreditUsageChunkRow[]> {
   const rows = await execRows<AuthCreditUsageChunkRow>(
     database,
-    sql`select * from auth_credit_usage_chunk_47(input_key => ${input_key}, i_is_extract => ${i_is_extract}, tally_untallied_credits => ${true})`,
+    sql`select * from auth_chunk_1(input_key => ${input_key}, input_credential_purpose => ${input_credential_purpose})`,
   );
   // api_key_id is a bigint column, so the pg driver hands it back as a string.
   for (const row of rows) {
     if (row.api_key_id != null) {
+      row.api_key_id_text = String(row.api_key_id);
       row.api_key_id = toNum(row.api_key_id);
     }
   }
@@ -49,11 +50,10 @@ export async function authCreditUsageChunk(
 export function authCreditUsageChunkFromTeam(
   database: DB,
   input_team: string,
-  i_is_extract: boolean,
 ): Promise<AuthCreditUsageChunkRow[]> {
   return execRows(
     database,
-    sql`select * from auth_credit_usage_chunk_47_from_team(input_team => ${input_team}, i_is_extract => ${i_is_extract}, tally_untallied_credits => ${true})`,
+    sql`select * from auth_chunk_1_from_team(input_team => ${input_team})`,
   );
 }
 
@@ -75,37 +75,29 @@ export function agentConsumeFreeRequestIfLeft(
   );
 }
 
-export function billTeam6(params: {
+export function billTeam7(params: {
   team_id: string;
   subscription_id: string | null;
-  fetch_subscription: boolean;
   credits: number;
   api_key_id: number | null;
   is_extract: boolean;
 }): Promise<{ api_key: string }[]> {
   return execRows(
     db,
-    sql`select * from bill_team_6(_team_id => ${params.team_id}, sub_id => ${params.subscription_id}, fetch_subscription => ${params.fetch_subscription}, credits => ${params.credits}, i_api_key_id => ${params.api_key_id}, is_extract_param => ${params.is_extract})`,
+    sql`select * from bill_team_7(_team_id => ${params.team_id}, sub_id => ${params.subscription_id}, credits => ${params.credits}, i_api_key_id => ${params.api_key_id}, is_extract_param => ${params.is_extract})`,
   );
 }
 
-export async function changeTrackingInsertScrape(params: {
-  team_id: string;
-  url: string;
-  job_id: string;
-  change_tracking_tag: string | null;
-  date_added: string;
-}): Promise<void> {
-  await db.execute(
-    sql`select change_tracking_insert_scrape(p_team_id => ${params.team_id}, p_url => ${params.url}, p_job_id => ${params.job_id}, p_change_tracking_tag => ${params.change_tracking_tag}, p_date_added => ${params.date_added}::timestamptz)`,
-  );
-}
-
+// `database` is a parameter because callers split between the primary and the
+// read replica: status controllers (informational `creditsUsed`) read from the
+// replica, while crawl finalization (crawl-logic) reads its own recent billing
+// writes and must stay on the primary.
 export function creditsBilledByCrawlId(
+  database: DB,
   i_crawl_id: string,
 ): Promise<{ credits_billed: number }[]> {
   return execRows(
-    db,
+    database,
     sql`select * from credits_billed_by_crawl_id_2(i_crawl_id => ${i_crawl_id})`,
   );
 }
@@ -139,10 +131,6 @@ export function monitoringClaimDueMonitors<T = Record<string, any>>(params: {
     db,
     sql`select * from monitoring_claim_due_monitors(p_worker_id => ${params.workerId}, p_limit => ${params.limit}, p_lease_seconds => ${params.leaseSeconds})`,
   );
-}
-
-export async function updateTallyTeam(i_team_id: string): Promise<void> {
-  await db.execute(sql`select update_tally_10_team(i_team_id => ${i_team_id})`);
 }
 
 // ============================================================================
@@ -258,7 +246,19 @@ export function queryMaxAge(
   );
 }
 
-export function indexGetRecent4(params: {
+type IndexGetRecentRow = {
+  id: string;
+  created_at: string;
+  status: number;
+  has_screenshot: boolean;
+  has_screenshot_fullscreen: boolean;
+  wait_time_ms: number | null;
+};
+
+// Same filters as index_get_recent_4, but also returns the per-entry
+// capability columns so results can populate the Dragonfly index cache
+// (services/index-cache.ts).
+export async function indexGetRecent5(params: {
   url_hash: Buffer;
   max_age_ms: number;
   is_mobile: boolean;
@@ -270,11 +270,15 @@ export function indexGetRecent4(params: {
   wait_time_ms: number;
   is_stealth: boolean;
   min_age_ms: number | null;
-}): Promise<{ id: string; created_at: string; status: number }[]> {
-  return execRows(
+}): Promise<IndexGetRecentRow[]> {
+  const rows = await execRows<IndexGetRecentRow>(
     dbIndex,
-    sql`select * from index_get_recent_4(p_url_hash => ${params.url_hash}, p_max_age_ms => ${params.max_age_ms}, p_is_mobile => ${params.is_mobile}, p_block_ads => ${params.block_ads}, p_feature_screenshot => ${params.feature_screenshot}, p_feature_screenshot_fullscreen => ${params.feature_screenshot_fullscreen}, p_location_country => ${params.location_country}, p_location_languages => ${sql.param(params.location_languages)}::text[], p_wait_time_ms => ${params.wait_time_ms}, p_is_stealth => ${params.is_stealth}, p_min_age_ms => ${params.min_age_ms})`,
+    sql`select * from index_get_recent_5(p_url_hash => ${params.url_hash}, p_max_age_ms => ${params.max_age_ms}, p_is_mobile => ${params.is_mobile}, p_block_ads => ${params.block_ads}, p_feature_screenshot => ${params.feature_screenshot}, p_feature_screenshot_fullscreen => ${params.feature_screenshot_fullscreen}, p_location_country => ${params.location_country}, p_location_languages => ${sql.param(params.location_languages)}::text[], p_wait_time_ms => ${params.wait_time_ms}, p_is_stealth => ${params.is_stealth}, p_min_age_ms => ${params.min_age_ms})`,
   );
+  for (const row of rows) {
+    row.wait_time_ms = toNum(row.wait_time_ms);
+  }
+  return rows;
 }
 
 export function queryTopUrlsForDomain<T = Record<string, any>>(

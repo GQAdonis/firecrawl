@@ -23,6 +23,7 @@ import {
   Identity,
   scrapeRaw,
   extractRaw,
+  creditUsage,
   TEST_API_URL,
 } from "./lib";
 import request from "./lib";
@@ -379,6 +380,72 @@ describe("Scrape tests", () => {
     scrapeTimeout,
   );
 
+  itIf(TEST_PRODUCTION || (HAS_AI && ALLOW_TEST_SUITE_WEBSITE))(
+    "blocks when checkPromptInjection detects a prompt injection",
+    async () => {
+      const raw = await scrapeRaw(
+        {
+          url: `${TEST_SUITE_WEBSITE}/prompt-injection`,
+          formats: [
+            {
+              type: "json",
+              schema: {
+                type: "object",
+                properties: { title: { type: "string" } },
+                required: ["title"],
+              },
+              checkPromptInjection: true,
+            },
+          ],
+          timeout: scrapeTimeout,
+        },
+        identity,
+      );
+
+      expect(raw.statusCode).toBe(403);
+      expect(raw.body.success).toBe(false);
+      expect(raw.body.code).toBe("SCRAPE_PROMPT_INJECTION_DETECTED");
+      expect(typeof raw.body.error).toBe("string");
+    },
+    scrapeTimeout,
+  );
+
+  // Self-hosted idmux has no per-team isolation, like billing.test.ts.
+  concurrentIf(TEST_PRODUCTION)(
+    "bills 5 credits when checkPromptInjection blocks a prompt injection",
+    async () => {
+      const blockedIdentity = await idmux({
+        name: "v2-scrape/prompt-injection-blocked",
+        credits: 1000,
+      });
+      const rc1 = (await creditUsage(blockedIdentity)).remainingCredits;
+
+      await scrapeRaw(
+        {
+          url: `${TEST_SUITE_WEBSITE}/prompt-injection`,
+          formats: [
+            {
+              type: "json",
+              schema: {
+                type: "object",
+                properties: { title: { type: "string" } },
+                required: ["title"],
+              },
+              checkPromptInjection: true,
+            },
+          ],
+          timeout: scrapeTimeout,
+        },
+        blockedIdentity,
+      );
+
+      await new Promise(resolve => setTimeout(resolve, 40000));
+      const rc2 = (await creditUsage(blockedIdentity)).remainingCredits;
+      expect(rc1 - rc2).toBe(5);
+    },
+    scrapeTimeout + 40000,
+  );
+
   itIf(TEST_SELF_HOST && !HAS_FIRE_ENGINE && ALLOW_TEST_SUITE_WEBSITE)(
     "does not reject empty actions array without fire-engine",
     async () => {
@@ -410,6 +477,25 @@ describe("Scrape tests", () => {
 
         const obj = JSON.parse(response.rawHtml!);
         expect(obj.id).toBe(1);
+      },
+      scrapeTimeout,
+    );
+  });
+
+  describeIf(ALLOW_TEST_SUITE_WEBSITE)("text/plain scrape support", () => {
+    it.concurrent(
+      "does not escape underscores in text/plain markdown",
+      async () => {
+        const response = await scrape(
+          {
+            url: `${base}/llms-underscore.txt`,
+            formats: ["markdown"],
+          },
+          identity,
+        );
+
+        expect(response.markdown).toContain("access_policies");
+        expect(response.markdown).not.toContain("access\\_policies");
       },
       scrapeTimeout,
     );
@@ -713,6 +799,28 @@ describe("Scrape tests", () => {
           expect(response.metadata.cacheState).toBe("miss");
         },
         scrapeTimeout * 2 + 1 * indexCooldown,
+      );
+
+      // Gated to the playwright engine (where cookies are seeded into the jar);
+      // a Cookie passed as an extra request header is dropped on redirect hops.
+      concurrentIf(HAS_PLAYWRIGHT && !HAS_FIRE_ENGINE)(
+        "forwards cookies across redirects",
+        async () => {
+          // httpbin's /cookies echoes the cookies it received. The cookie only
+          // survives the 302 hop if it was seeded into the browser cookie jar.
+          const response = await scrape(
+            {
+              url: "https://httpbin.org/redirect-to?url=https%3A%2F%2Fhttpbin.org%2Fcookies&status_code=302",
+              headers: { Cookie: "fc_cookie_redirect_test=1" },
+              formats: ["rawHtml"],
+              waitFor: 1000,
+            },
+            identity,
+          );
+
+          expect(response.rawHtml).toContain("fc_cookie_redirect_test");
+        },
+        scrapeTimeout,
       );
 
       it.concurrent(
@@ -1322,6 +1430,55 @@ describe("Scrape tests", () => {
         scrapeTimeout * 2,
       );
 
+      // Regression: an explicit stealth/enhanced proxy must still use stealth
+      // even when another feature flag (e.g. actions) is requested. The engine
+      // picker used to drop the negative-quality stealth engines via the quality
+      // filter, so a request with a non-stealth flag would silently fall back to
+      // a basic proxy.
+      it.concurrent(
+        "enhanced uses stealth alongside other feature flags",
+        async () => {
+          const res = await scrape(
+            {
+              url: base,
+              proxy: "enhanced",
+              actions: [
+                {
+                  type: "wait",
+                  milliseconds: 500,
+                },
+              ],
+            },
+            identity,
+          );
+
+          expect(res.metadata.proxyUsed).toBe("stealth");
+        },
+        scrapeTimeout * 2,
+      );
+
+      it.concurrent(
+        "stealth uses stealth alongside other feature flags",
+        async () => {
+          const res = await scrape(
+            {
+              url: base,
+              proxy: "stealth",
+              actions: [
+                {
+                  type: "wait",
+                  milliseconds: 500,
+                },
+              ],
+            },
+            identity,
+          );
+
+          expect(res.metadata.proxyUsed).toBe("stealth");
+        },
+        scrapeTimeout * 2,
+      );
+
       // TODO: flaky
       // it.concurrent("auto works properly on 'stealth' site (faked for reliabile testing)", async () => {
       //   const res = await scrape({
@@ -1348,6 +1505,8 @@ describe("Scrape tests", () => {
           expect(response.markdown).toContain("PDF Test File");
           expect(response.metadata.title).toContain("PDF Test Page");
           expect(response.metadata.numPages).toBe(1);
+          // A complete parse must not carry the partial-scrape warning.
+          expect(response.warning).toBeUndefined();
         },
         scrapeTimeout,
       );

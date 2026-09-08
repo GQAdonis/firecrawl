@@ -15,14 +15,14 @@ class ClientTest < Minitest::Test
   # CLIENT INITIALIZATION
   # ================================================================
 
-  def test_raises_when_no_api_key
+  def test_allows_no_api_key_for_keyless_endpoints
     ENV.delete("FIRECRAWL_API_KEY")
-    assert_raises(Firecrawl::FirecrawlError) { Firecrawl::Client.new }
+    assert_instance_of Firecrawl::Client, Firecrawl::Client.new
   end
 
-  def test_raises_when_whitespace_only_api_key
+  def test_allows_whitespace_only_api_key_for_keyless_endpoints
     ENV.delete("FIRECRAWL_API_KEY")
-    assert_raises(Firecrawl::FirecrawlError) { Firecrawl::Client.new(api_key: "   ") }
+    assert_instance_of Firecrawl::Client, Firecrawl::Client.new(api_key: "   ")
   end
 
   def test_raises_when_api_url_not_http
@@ -69,7 +69,7 @@ class ClientTest < Minitest::Test
   def test_scrape_basic
     stub_request(:post, "#{BASE_URL}/v2/scrape")
       .with(
-        body: { url: "https://example.com" }.to_json,
+        body: { url: "https://example.com", origin: "ruby-sdk@#{Firecrawl::VERSION}" }.to_json,
         headers: { "Authorization" => "Bearer #{API_KEY}", "Content-Type" => "application/json" }
       )
       .to_return(
@@ -83,6 +83,88 @@ class ClientTest < Minitest::Test
     assert_equal "# Hello", doc.markdown
     assert_equal "https://storage.googleapis.com/firecrawl/video.mp4", doc.video
     assert_equal "Example", doc.metadata["title"]
+  end
+
+  def test_scrape_hydrates_pdf_pages
+    stub_request(:post, "#{BASE_URL}/v2/scrape")
+      .to_return(
+        status: 200,
+        body: JSON.generate(data: {
+          markdown: "# Annual Report 2025",
+          pages: [
+            { pageNumber: 1, markdown: "# Cover" },
+            { pageNumber: 2, markdown: "## Intro" }
+          ]
+        }),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    doc = @client.scrape("https://example.com/report.pdf")
+    assert_equal "# Annual Report 2025", doc.markdown
+    assert_equal 2, doc.pages.length
+    assert_equal 1, doc.pages[0]["pageNumber"]
+    assert_equal "# Cover", doc.pages[0]["markdown"]
+  end
+
+  def test_scrape_hydrates_pdf_blocks
+    stub_request(:post, "#{BASE_URL}/v2/scrape")
+      .to_return(
+        status: 200,
+        body: JSON.generate(data: {
+          markdown: "# Annual Report 2025",
+          blocks: [{
+            pageNumber: 1,
+            width: 1700,
+            height: 2200,
+            status: "ok",
+            items: [{
+              id: "p1.b0",
+              type: "title",
+              content: "# Annual Report 2025",
+              readingOrder: 0
+            }]
+          }]
+        }),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    doc = @client.scrape("https://example.com/report.pdf")
+    assert_equal "# Annual Report 2025", doc.markdown
+    assert_equal 1, doc.blocks.length
+    assert_equal 1, doc.blocks[0]["pageNumber"]
+    assert_equal "title", doc.blocks[0]["items"][0]["type"]
+  end
+
+  def test_scrape_serializes_pdf_parser_page_markers
+    stub_request(:post, "#{BASE_URL}/v2/scrape")
+      .with { |req|
+        body = JSON.parse(req.body)
+        body["parsers"] == [{
+          "type" => "pdf",
+          "mode" => "auto",
+          "pages" => true,
+          "blocks" => true,
+          "pageMarkers" => true
+        }]
+      }
+      .to_return(
+        status: 200,
+        body: JSON.generate(data: { markdown: "# Cover" }),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    options = Firecrawl::Models::ScrapeOptions.new(
+      parsers: [
+        Firecrawl::Models::PDFParser.new(
+          mode: "auto",
+          pages: true,
+          blocks: true,
+          page_markers: true
+        )
+      ]
+    )
+    doc = @client.scrape("https://example.com/report.pdf", options)
+    assert_equal "# Cover", doc.markdown
   end
 
   def test_scrape_with_options
@@ -102,6 +184,211 @@ class ClientTest < Minitest::Test
 
   def test_scrape_raises_on_nil_url
     assert_raises(ArgumentError) { @client.scrape(nil) }
+  end
+
+  def test_scrape_with_product_format
+    stub_request(:post, "#{BASE_URL}/v2/scrape")
+      .to_return(
+        status: 200,
+        body: JSON.generate(
+          data: {
+            markdown: "# Widget",
+            product: {
+              title: "Acme Widget",
+              brand: "Acme",
+              category: "Gadgets",
+              url: "https://example.com/widget",
+              description: "A fine widget.",
+              variants: [
+                {
+                  id: "v1",
+                  sku: "ACME-1",
+                  title: "Large",
+                  values: { size: "L" },
+                  price: { amount: 2199, currency: "USD" },
+                  sale: { originalPrice: { amount: 2999, currency: "USD", formatted: "$29.99" } },
+                  availability: { inStock: true, text: "In stock" },
+                  images: [{ url: "https://example.com/v1.jpg", alt: "Widget" }],
+                },
+                {
+                  id: "v2",
+                  title: "Small",
+                  values: { size: "S" },
+                },
+              ],
+            },
+          }
+        ),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    doc = @client.scrape("https://example.com/widget")
+    product = doc.product
+    assert_instance_of Firecrawl::Models::ProductProfile, product
+    assert_equal "Acme Widget", product.title
+    assert_equal "Acme", product.brand
+    assert_equal "Gadgets", product.category
+    assert_equal "https://example.com/widget", product.url
+    assert_equal "A fine widget.", product.description
+
+    assert_equal 2, product.variants.size
+    variant = product.variants.first
+    assert_equal "v1", variant.id
+    assert_equal "ACME-1", variant.sku
+    assert_equal "Large", variant.title
+    assert_equal({ "size" => "L" }, variant.values)
+
+    assert_equal 2199, variant.price.amount
+    assert_equal "USD", variant.price.currency
+
+    assert_equal 2999, variant.sale.original_price.amount
+    assert_equal "$29.99", variant.sale.original_price.formatted
+
+    assert_equal true, variant.availability.in_stock
+    assert_equal "In stock", variant.availability.text
+
+    assert_equal 1, variant.images.size
+    assert_equal "https://example.com/v1.jpg", variant.images.first.url
+    assert_equal "Widget", variant.images.first.alt
+
+    # Availability is always present; sale/price/images are optional.
+    bare = product.variants.last
+    assert_equal "v2", bare.id
+    assert_nil bare.price
+    assert_nil bare.sale
+    refute_nil bare.availability
+    assert_equal false, bare.availability.in_stock
+    assert_empty bare.images
+  end
+
+  def test_scrape_without_product_format_leaves_product_nil
+    stub_request(:post, "#{BASE_URL}/v2/scrape")
+      .to_return(
+        status: 200,
+        body: JSON.generate(data: { markdown: "# Hi" }),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    doc = @client.scrape("https://example.com")
+    assert_nil doc.product
+  end
+
+  def test_scrape_with_menu_format
+    stub_request(:post, "#{BASE_URL}/v2/scrape")
+      .to_return(
+        status: 200,
+        body: JSON.generate(
+          data: {
+            markdown: "# Menu",
+            menu: {
+              isMenu: true,
+              confidence: 0.92,
+              currency: "USD",
+              sourceUrl: "https://example.com/menu",
+              merchant: {
+                name: "Joe's Diner",
+                type: "restaurant",
+                location: { city: "Springfield" },
+              },
+              sections: [
+                {
+                  id: "s1",
+                  name: "Breakfast",
+                  description: "Served all day.",
+                  items: [
+                    {
+                      id: "i1",
+                      name: "Pancakes",
+                      description: "Fluffy stack.",
+                      images: [{ url: "https://example.com/pancakes.jpg", alt: "Pancakes" }],
+                      price: { amount: 899, currency: "USD", formatted: "$8.99" },
+                      availability: { inStock: true, text: "Available" },
+                      dietary: ["vegetarian"],
+                      calories: 520,
+                      optionGroups: [{ name: "Syrup" }],
+                      identifiers: { merchantItemId: "MENU-1" },
+                      url: "https://example.com/menu#pancakes",
+                      sourceUrl: "https://example.com/menu",
+                    },
+                    {
+                      id: "i2",
+                      name: "Toast",
+                      sourceUrl: "https://example.com/menu",
+                    },
+                  ],
+                },
+              ],
+            },
+          }
+        ),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    doc = @client.scrape("https://example.com/menu")
+    menu = doc.menu
+    assert_instance_of Firecrawl::Models::MenuProfile, menu
+    assert_equal true, menu.is_menu
+    assert_in_delta 0.92, menu.confidence, 0.0001
+    assert_equal "USD", menu.currency
+    assert_equal "https://example.com/menu", menu.source_url
+
+    assert_equal "Joe's Diner", menu.merchant.name
+    assert_equal "restaurant", menu.merchant.type
+    assert_equal({ "city" => "Springfield" }, menu.merchant.location)
+
+    assert_equal 1, menu.sections.size
+    section = menu.sections.first
+    assert_equal "s1", section.id
+    assert_equal "Breakfast", section.name
+    assert_equal "Served all day.", section.description
+
+    assert_equal 2, section.items.size
+    item = section.items.first
+    assert_equal "i1", item.id
+    assert_equal "Pancakes", item.name
+    assert_equal "Fluffy stack.", item.description
+
+    assert_equal 1, item.images.size
+    assert_equal "https://example.com/pancakes.jpg", item.images.first.url
+    assert_equal "Pancakes", item.images.first.alt
+
+    assert_equal 899, item.price.amount
+    assert_equal "USD", item.price.currency
+    assert_equal "$8.99", item.price.formatted
+
+    assert_equal true, item.availability.in_stock
+    assert_equal "Available", item.availability.text
+
+    assert_equal ["vegetarian"], item.dietary
+    assert_equal 520, item.calories
+    assert_equal [{ "name" => "Syrup" }], item.option_groups
+    assert_equal "MENU-1", item.identifiers.merchant_item_id
+    assert_equal "https://example.com/menu#pancakes", item.url
+    assert_equal "https://example.com/menu", item.source_url
+
+    # price/images/calories optional; availability always present.
+    bare = section.items.last
+    assert_equal "i2", bare.id
+    assert_nil bare.price
+    assert_nil bare.calories
+    assert_empty bare.images
+    assert_empty bare.dietary
+    assert_empty bare.option_groups
+    refute_nil bare.availability
+    assert_equal false, bare.availability.in_stock
+    assert_nil bare.identifiers.merchant_item_id
+  end
+
+  def test_scrape_without_menu_format_leaves_menu_nil
+    stub_request(:post, "#{BASE_URL}/v2/scrape")
+      .to_return(
+        status: 200,
+        body: JSON.generate(data: { markdown: "# Hi" }),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    doc = @client.scrape("https://example.com")
+    assert_nil doc.menu
   end
 
   # ================================================================
@@ -349,6 +636,144 @@ class ClientTest < Minitest::Test
     assert_raises(ArgumentError) { Firecrawl::Models::AgentOptions.new }
   end
 
+  def test_start_agent_with_effort
+    stub_request(:post, "#{BASE_URL}/v2/agent")
+      .with { |req| body = JSON.parse(req.body); body["effort"] == "high" && body["model"] == "spark-1-pro" }
+      .to_return(
+        status: 200,
+        body: JSON.generate(success: true, id: "agent-effort"),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    options = Firecrawl::Models::AgentOptions.new(prompt: "Find pricing info", model: "spark-1-pro", effort: "high")
+    response = @client.start_agent(options)
+    assert_equal "agent-effort", response.id
+  end
+
+  def test_get_agent_status_with_effort
+    stub_request(:get, "#{BASE_URL}/v2/agent/agent-effort")
+      .to_return(
+        status: 200,
+        body: JSON.generate(status: "completed", effort: "high"),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    status = @client.get_agent_status("agent-effort")
+    assert_equal "completed", status.status
+    assert_equal "high", status.effort
+  end
+
+  def test_get_agent_trace
+    stub_request(:get, "#{BASE_URL}/v2/agent/agent-123/trace")
+      .to_return(
+        status: 200,
+        body: JSON.generate(
+          success: true,
+          id: "agent-123",
+          events: [{ type: "run.started" }, { type: "run.finished" }],
+          creditsUsed: 5
+        ),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    trace = @client.get_agent_trace("agent-123")
+    assert_instance_of Firecrawl::Models::AgentTraceResponse, trace
+    assert_equal true, trace.success
+    assert_equal "agent-123", trace.id
+    assert_equal 5, trace.credits_used
+    assert_equal 2, trace.events.size
+    assert_equal "run.started", trace.events.first["type"]
+    assert_nil trace.active_browser_sessions
+  end
+
+  def test_get_agent_trace_with_live_view
+    stub_request(:get, "#{BASE_URL}/v2/agent/agent-123/trace")
+      .with(query: { liveView: "true" })
+      .to_return(
+        status: 200,
+        body: JSON.generate(
+          success: true,
+          id: "agent-123",
+          events: [],
+          creditsUsed: 5,
+          activeBrowserSessions: [
+            { id: "bs-1", liveViewUrl: "https://live.example.com/bs-1", viewport: { width: 1280, height: 720 } }
+          ]
+        ),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    trace = @client.get_agent_trace("agent-123", live_view: true)
+    assert_equal 1, trace.active_browser_sessions.size
+    assert_equal "https://live.example.com/bs-1", trace.active_browser_sessions.first["liveViewUrl"]
+    assert_equal 1280, trace.active_browser_sessions.first["viewport"]["width"]
+  end
+
+  def test_get_agent_snapshot
+    stub_request(:get, "#{BASE_URL}/v2/agent/agent-123/snapshots/snap-1")
+      .to_return(
+        status: 200,
+        body: JSON.generate(success: true, id: "agent-123", snapshotId: "snap-1", snapshot: "<html>snapshot</html>"),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    snapshot = @client.get_agent_snapshot("agent-123", "snap-1")
+    assert_instance_of Firecrawl::Models::AgentSnapshotResponse, snapshot
+    assert_equal true, snapshot.success
+    assert_equal "agent-123", snapshot.id
+    assert_equal "snap-1", snapshot.snapshot_id
+    assert_equal "<html>snapshot</html>", snapshot.snapshot
+  end
+
+  def test_list_agents
+    stub_request(:get, "#{BASE_URL}/v2/agent")
+      .to_return(
+        status: 200,
+        body: JSON.generate(
+          success: true,
+          agents: [
+            {
+              id: "agent-123",
+              createdAt: "2026-08-31T12:00:00.000Z",
+              targetHint: "https://example.com",
+              origin: "api",
+              settings: { hidden: false, starred: true, label: "prod" },
+              status: "completed",
+              options: { urls: ["https://example.com"], prompt: "find pricing", model: "spark-1-pro" }
+            }
+          ]
+        ),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    response = @client.list_agents
+    assert_instance_of Firecrawl::Models::AgentListResponse, response
+    assert_equal true, response.success
+    assert_nil response.next
+    assert_equal 1, response.agents.size
+    assert_equal "agent-123", response.agents.first["id"]
+    assert_equal "completed", response.agents.first["status"]
+    assert_equal true, response.agents.first["settings"]["starred"]
+  end
+
+  def test_list_agents_with_before
+    stub_request(:get, "#{BASE_URL}/v2/agent")
+      .with(query: { before: "1756600000000" })
+      .to_return(
+        status: 200,
+        body: JSON.generate(
+          success: true,
+          agents: [],
+          next: "https://api.firecrawl.dev/v2/agent?before=1756600000000"
+        ),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    response = @client.list_agents(before: 1756600000000)
+    assert_equal true, response.success
+    assert_equal "https://api.firecrawl.dev/v2/agent?before=1756600000000", response.next
+  end
+
   # ================================================================
   # USAGE & METRICS
   # ================================================================
@@ -488,6 +913,30 @@ class ClientTest < Minitest::Test
     )
   end
 
+  def test_json_format_to_h
+    format = Firecrawl::Models::JsonFormat.new(
+      schema: { "type" => "object" },
+      prompt: "Extract the title",
+      check_prompt_injection: true
+    )
+    opts = Firecrawl::Models::ScrapeOptions.new(formats: [format])
+
+    assert_equal(
+      [{
+        "type" => "json",
+        "schema" => { "type" => "object" },
+        "prompt" => "Extract the title",
+        "checkPromptInjection" => true,
+      }],
+      opts.to_h["formats"]
+    )
+  end
+
+  def test_json_format_to_h_keeps_explicit_false
+    format = Firecrawl::Models::JsonFormat.new(check_prompt_injection: false)
+    assert_equal false, format.to_h["checkPromptInjection"]
+  end
+
   def test_query_format_rejects_invalid_mode
     assert_raises(ArgumentError) do
       Firecrawl::Models::QueryFormat.new(prompt: "What is Firecrawl?", mode: "quoted")
@@ -537,6 +986,7 @@ class ClientTest < Minitest::Test
       limit: 10,
       location: "US",
       tbs: "qdr:w",
+      highlights: false,
       include_domains: ["firecrawl.dev"],
       exclude_domains: ["example.com"]
     )
@@ -544,6 +994,7 @@ class ClientTest < Minitest::Test
     assert_equal 10, h["limit"]
     assert_equal "US", h["location"]
     assert_equal "qdr:w", h["tbs"]
+    assert_equal false, h["highlights"]
     assert_equal ["firecrawl.dev"], h["includeDomains"]
     assert_equal ["example.com"], h["excludeDomains"]
   end
@@ -560,6 +1011,41 @@ class ClientTest < Minitest::Test
     assert_equal ["https://example.com"], h["urls"]
     assert_equal 100, h["maxCredits"]
     assert_equal "spark-1-pro", h["model"]
+  end
+
+  def test_agent_options_to_h_with_effort
+    opts = Firecrawl::Models::AgentOptions.new(
+      prompt: "Find data",
+      model: "spark-1-pro",
+      effort: "high"
+    )
+    h = opts.to_h
+    assert_equal "spark-1-pro", h["model"]
+    assert_equal "high", h["effort"]
+  end
+
+  def test_audit_metadata_to_h
+    metadata = Firecrawl::Models::AuditMetadata.new(username: "alice@example.com")
+    serialized = { "username" => "alice@example.com" }
+
+    assert_equal serialized, Firecrawl::Models::ScrapeOptions.new(audit_metadata: metadata).to_h["auditMetadata"]
+    assert_equal serialized, Firecrawl::Models::MapOptions.new(audit_metadata: metadata).to_h["auditMetadata"]
+    assert_equal serialized,
+                 Firecrawl::Models::AgentOptions.new(
+                   prompt: "find pricing",
+                   audit_metadata: metadata
+                 ).to_h["auditMetadata"]
+    assert_equal serialized, Firecrawl::Models::ParseOptions.new(audit_metadata: metadata).to_h["auditMetadata"]
+    crawl = Firecrawl::Models::CrawlOptions.new(
+      scrape_options: Firecrawl::Models::ScrapeOptions.new(audit_metadata: metadata)
+    )
+    assert_equal serialized, crawl.to_h.dig("scrapeOptions", "auditMetadata")
+  end
+
+  def test_audit_metadata_rejects_arbitrary_hashes
+    assert_raises(ArgumentError) do
+      Firecrawl::Models::ScrapeOptions.new(audit_metadata: { "session" => "session-123" })
+    end
   end
 
   def test_batch_scrape_options_to_h
@@ -688,6 +1174,18 @@ class ClientTest < Minitest::Test
     end
   end
 
+  def test_parse_options_rejects_product_format
+    assert_raises(ArgumentError) do
+      Firecrawl::Models::ParseOptions.new(formats: ["product"])
+    end
+  end
+
+  def test_parse_options_rejects_menu_format
+    assert_raises(ArgumentError) do
+      Firecrawl::Models::ParseOptions.new(formats: ["menu"])
+    end
+  end
+
   def test_parse_options_rejects_invalid_proxy
     assert_raises(ArgumentError) do
       Firecrawl::Models::ParseOptions.new(proxy: "stealth")
@@ -721,5 +1219,98 @@ class ClientTest < Minitest::Test
     )
     doc = @client.parse(file, Firecrawl::Models::ParseOptions.new(formats: ["markdown"]))
     assert_equal "# Parsed", doc.markdown
+  end
+
+  # ================================================================
+  # MONITOR - SEARCH TARGET
+  # ================================================================
+
+  def test_create_monitor_forwards_search_target
+    captured = nil
+    stub_request(:post, "#{BASE_URL}/v2/monitor")
+      .with { |req| captured = JSON.parse(req.body); true }
+      .to_return(
+        status: 200,
+        body: JSON.generate(success: true, data: { id: "mon_1", judgeEnabled: true, goal: "g" }),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    search_target = {
+      "type" => "search",
+      "queries" => ["firecrawl launch"],
+      "searchWindow" => "24h",
+      "includeDomains" => ["firecrawl.dev"],
+      "excludeDomains" => ["spam.com"],
+      "maxResults" => 20,
+    }
+
+    monitor = @client.create_monitor(
+      name: "Search monitor",
+      schedule: { "text" => "every 30 minutes" },
+      targets: [search_target],
+      goal: "g",
+      judge_enabled: true
+    )
+
+    assert_equal search_target, captured["targets"][0]
+    assert_equal "search", captured["targets"][0]["type"]
+    assert_equal "24h", captured["targets"][0]["searchWindow"]
+    assert_equal "g", monitor.goal
+    assert_equal true, monitor.judge_enabled
+  end
+
+  def test_monitor_search_target_model_to_h
+    target = Firecrawl::Models::MonitorTarget.new(
+      "type" => "search",
+      "queries" => ["a", "b"],
+      "searchWindow" => "1h",
+      "includeDomains" => ["x.com"],
+      "excludeDomains" => ["y.com"],
+      "maxResults" => 5
+    )
+
+    assert_equal "search", target.type
+    assert_equal ["a", "b"], target.queries
+    assert_equal "1h", target.search_window
+    assert_equal 5, target.max_results
+    assert_equal(
+      {
+        "type" => "search",
+        "queries" => ["a", "b"],
+        "searchWindow" => "1h",
+        "includeDomains" => ["x.com"],
+        "excludeDomains" => ["y.com"],
+        "maxResults" => 5,
+      },
+      target.to_h
+    )
+  end
+
+  def test_monitor_search_target_result_model
+    result = Firecrawl::Models::MonitorTargetResult.new(
+      "targetId" => "tgt_1",
+      "type" => "search",
+      "searchCompleted" => true,
+      "resultCount" => 10,
+      "matches" => 3,
+      "summary" => "found stuff",
+      "judgeDegraded" => false,
+      "degradedReason" => nil,
+      "searchCredits" => 1.5,
+      "judgeCredits" => 0.5,
+      "resultsJudged" => 8
+    )
+
+    assert_equal "tgt_1", result.target_id
+    assert_equal "search", result.type
+    assert_equal true, result.search_completed
+    assert_equal 10, result.result_count
+    assert_equal 3, result.matches
+    assert_equal "found stuff", result.summary
+    assert_equal false, result.judge_degraded
+    assert_nil result.degraded_reason
+    assert_in_delta 1.5, result.search_credits
+    assert_in_delta 0.5, result.judge_credits
+    assert_equal 8, result.results_judged
   end
 end

@@ -37,6 +37,7 @@ import java.util.concurrent.ForkJoinPool;
 public class FirecrawlClient {
 
     private static final String DEFAULT_API_URL = "https://api.firecrawl.dev";
+    private static final String SDK_ORIGIN = "java-sdk@1.17.0";
     private static final long DEFAULT_TIMEOUT_MS = 300_000; // 5 minutes
     private static final int DEFAULT_MAX_RETRIES = 3;
     private static final double DEFAULT_BACKOFF_FACTOR = 0.5;
@@ -101,6 +102,7 @@ public class FirecrawlClient {
         if (options != null) {
             mergeOptions(body, options);
         }
+        body.putIfAbsent("origin", SDK_ORIGIN);
         return extractData(http.post("/v2/scrape", body, Map.class), Document.class);
     }
 
@@ -148,6 +150,7 @@ public class FirecrawlClient {
         body.put("language", language != null ? language : "node");
         if (timeout != null) body.put("timeout", timeout);
         if (origin != null) body.put("origin", origin);
+        body.putIfAbsent("origin", SDK_ORIGIN);
         return http.post("/v2/scrape/" + jobId + "/interact", body, BrowserExecuteResponse.class);
     }
 
@@ -549,7 +552,81 @@ public class FirecrawlClient {
         if (options != null) {
             mergeOptions(body, options);
         }
+        body.putIfAbsent("origin", SDK_ORIGIN);
         return extractData(http.post("/v2/search", body, Map.class), SearchData.class);
+    }
+
+    public ResearchModels.SearchPapersResponse searchPapers(String query) {
+        return searchPapers(query, null);
+    }
+
+    public ResearchModels.SearchPapersResponse searchPapers(String query, ResearchModels.SearchPapersOptions options) {
+        Objects.requireNonNull(query, "Query is required");
+        Map<String, Object> params = new LinkedHashMap<>();
+        params.put("query", query);
+        params.put("origin", SDK_ORIGIN);
+        if (options != null) mergeOptions(params, options);
+        return http.get("/v2/search/research/papers" + researchQuery(params), ResearchModels.SearchPapersResponse.class);
+    }
+
+    public ResearchModels.PaperMetadataResponse inspectPaper(String paperId) {
+        Objects.requireNonNull(paperId, "Paper ID is required");
+        return http.get("/v2/search/research/papers/" + urlEncode(paperId), ResearchModels.PaperMetadataResponse.class);
+    }
+
+    public ResearchModels.ReadPaperResponse readPaper(String paperId, String query) {
+        return readPaper(paperId, query, null);
+    }
+
+    public ResearchModels.ReadPaperResponse readPaper(String paperId, String query, ResearchModels.ReadPaperOptions options) {
+        Objects.requireNonNull(paperId, "Paper ID is required");
+        Objects.requireNonNull(query, "Query is required");
+        Map<String, Object> params = new LinkedHashMap<>();
+        params.put("query", query);
+        params.put("origin", SDK_ORIGIN);
+        if (options != null) mergeOptions(params, options);
+        return http.get("/v2/search/research/papers/" + urlEncode(paperId) + researchQuery(params), ResearchModels.ReadPaperResponse.class);
+    }
+
+    public ResearchModels.SimilarPapersResponse relatedPapers(String paperId, String intent) {
+        return relatedPapers(paperId, intent, null);
+    }
+
+    public ResearchModels.SimilarPapersResponse relatedPapers(String paperId, String intent, ResearchModels.RelatedPapersOptions options) {
+        Objects.requireNonNull(paperId, "Paper ID is required");
+        Objects.requireNonNull(intent, "Intent is required");
+        Map<String, Object> params = new LinkedHashMap<>();
+        params.put("intent", intent);
+        params.put("origin", SDK_ORIGIN);
+        if (options != null) mergeOptions(params, options);
+        return http.get("/v2/search/research/papers/" + urlEncode(paperId) + "/similar" + researchQuery(params), ResearchModels.SimilarPapersResponse.class);
+    }
+
+    /**
+     * @deprecated Stops responding after 2026-11-03. Use the developer index at
+     *             GET or POST /v2/search/developer, which this SDK does not wrap
+     *             yet, so call it directly. It does not carry over the score
+     *             breakdown or the web fallback results.
+     */
+    @Deprecated
+    public ResearchModels.GitHubSearchResponse searchGitHub(String query) {
+        return searchGitHub(query, null);
+    }
+
+    /**
+     * @deprecated Stops responding after 2026-11-03. Use the developer index at
+     *             GET or POST /v2/search/developer, which this SDK does not wrap
+     *             yet, so call it directly. It does not carry over the score
+     *             breakdown or the web fallback results.
+     */
+    @Deprecated
+    public ResearchModels.GitHubSearchResponse searchGitHub(String query, ResearchModels.SearchGitHubOptions options) {
+        Objects.requireNonNull(query, "Query is required");
+        Map<String, Object> params = new LinkedHashMap<>();
+        params.put("query", query);
+        params.put("origin", SDK_ORIGIN);
+        if (options != null) mergeOptions(params, options);
+        return http.get("/v2/search/research/github" + researchQuery(params), ResearchModels.GitHubSearchResponse.class);
     }
 
     // ================================================================
@@ -576,6 +653,34 @@ public class FirecrawlClient {
     public AgentStatusResponse getAgentStatus(String jobId) {
         Objects.requireNonNull(jobId, "Job ID is required");
         return http.get("/v2/agent/" + jobId, AgentStatusResponse.class);
+    }
+
+    /**
+     * Lists agent runs, most recent first.
+     *
+     * @return the agent list response
+     */
+    public AgentListResponse listAgents() {
+        return listAgents(null);
+    }
+
+    /**
+     * Lists agent runs, most recent first.
+     *
+     * Pages are fixed at 20 runs. To fetch the next page, pass the before
+     * value from the previous page's next URL. This method does not
+     * auto-paginate.
+     *
+     * @param before only return agent runs created before this unix
+     *               millisecond timestamp (nullable)
+     * @return the agent list response
+     */
+    public AgentListResponse listAgents(Long before) {
+        String endpoint = "/v2/agent";
+        if (before != null) {
+            endpoint += "?before=" + before;
+        }
+        return http.get(endpoint, AgentListResponse.class);
     }
 
     /**
@@ -622,6 +727,46 @@ public class FirecrawlClient {
     public Map<String, Object> cancelAgent(String jobId) {
         Objects.requireNonNull(jobId, "Job ID is required");
         return http.delete("/v2/agent/" + jobId, Map.class);
+    }
+
+    /**
+     * Gets the event trace of an agent task.
+     *
+     * @param jobId the agent job ID
+     * @return the agent trace response
+     */
+    public AgentTraceResponse getAgentTrace(String jobId) {
+        return getAgentTrace(jobId, false);
+    }
+
+    /**
+     * Gets the event trace of an agent task, optionally including live view URLs
+     * for active browser sessions.
+     *
+     * @param jobId    the agent job ID
+     * @param liveView whether to include active browser sessions with live view URLs
+     * @return the agent trace response
+     */
+    public AgentTraceResponse getAgentTrace(String jobId, boolean liveView) {
+        Objects.requireNonNull(jobId, "Job ID is required");
+        String endpoint = "/v2/agent/" + jobId + "/trace";
+        if (liveView) {
+            endpoint += "?liveView=true";
+        }
+        return http.get(endpoint, AgentTraceResponse.class);
+    }
+
+    /**
+     * Gets a snapshot of an agent task.
+     *
+     * @param jobId      the agent job ID
+     * @param snapshotId the snapshot ID
+     * @return the agent snapshot response
+     */
+    public AgentSnapshotResponse getAgentSnapshot(String jobId, String snapshotId) {
+        Objects.requireNonNull(jobId, "Job ID is required");
+        Objects.requireNonNull(snapshotId, "Snapshot ID is required");
+        return http.get("/v2/agent/" + jobId + "/snapshots/" + snapshotId, AgentSnapshotResponse.class);
     }
 
     // ================================================================
@@ -909,6 +1054,33 @@ public class FirecrawlClient {
         return CompletableFuture.supplyAsync(() -> search(query, options), asyncExecutor);
     }
 
+    public CompletableFuture<ResearchModels.SearchPapersResponse> searchPapersAsync(String query, ResearchModels.SearchPapersOptions options) {
+        return CompletableFuture.supplyAsync(() -> searchPapers(query, options), asyncExecutor);
+    }
+
+    public CompletableFuture<ResearchModels.PaperMetadataResponse> inspectPaperAsync(String paperId) {
+        return CompletableFuture.supplyAsync(() -> inspectPaper(paperId), asyncExecutor);
+    }
+
+    public CompletableFuture<ResearchModels.ReadPaperResponse> readPaperAsync(String paperId, String query, ResearchModels.ReadPaperOptions options) {
+        return CompletableFuture.supplyAsync(() -> readPaper(paperId, query, options), asyncExecutor);
+    }
+
+    public CompletableFuture<ResearchModels.SimilarPapersResponse> relatedPapersAsync(String paperId, String intent, ResearchModels.RelatedPapersOptions options) {
+        return CompletableFuture.supplyAsync(() -> relatedPapers(paperId, intent, options), asyncExecutor);
+    }
+
+    /**
+     * @deprecated Stops responding after 2026-11-03. Use the developer index at
+     *             GET or POST /v2/search/developer, which this SDK does not wrap
+     *             yet, so call it directly. It does not carry over the score
+     *             breakdown or the web fallback results.
+     */
+    @Deprecated
+    public CompletableFuture<ResearchModels.GitHubSearchResponse> searchGitHubAsync(String query, ResearchModels.SearchGitHubOptions options) {
+        return CompletableFuture.supplyAsync(() -> searchGitHub(query, options), asyncExecutor);
+    }
+
     /**
      * Asynchronously runs a map operation.
      *
@@ -1104,6 +1276,17 @@ public class FirecrawlClient {
     }
 
     /**
+     * Asynchronously lists agent runs, most recent first.
+     *
+     * @param before only return agent runs created before this unix
+     *               millisecond timestamp (nullable)
+     * @return a CompletableFuture that resolves to the AgentListResponse
+     */
+    public CompletableFuture<AgentListResponse> listAgentsAsync(Long before) {
+        return CompletableFuture.supplyAsync(() -> listAgents(before), asyncExecutor);
+    }
+
+    /**
      * Asynchronously cancels an agent task.
      *
      * @param jobId the agent job ID
@@ -1111,6 +1294,39 @@ public class FirecrawlClient {
      */
     public CompletableFuture<Map<String, Object>> cancelAgentAsync(String jobId) {
         return CompletableFuture.supplyAsync(() -> cancelAgent(jobId), asyncExecutor);
+    }
+
+    /**
+     * Asynchronously gets the event trace of an agent task.
+     *
+     * @param jobId the agent job ID
+     * @return a CompletableFuture that resolves to the AgentTraceResponse
+     */
+    public CompletableFuture<AgentTraceResponse> getAgentTraceAsync(String jobId) {
+        return CompletableFuture.supplyAsync(() -> getAgentTrace(jobId), asyncExecutor);
+    }
+
+    /**
+     * Asynchronously gets the event trace of an agent task, optionally including
+     * live view URLs for active browser sessions.
+     *
+     * @param jobId    the agent job ID
+     * @param liveView whether to include active browser sessions with live view URLs
+     * @return a CompletableFuture that resolves to the AgentTraceResponse
+     */
+    public CompletableFuture<AgentTraceResponse> getAgentTraceAsync(String jobId, boolean liveView) {
+        return CompletableFuture.supplyAsync(() -> getAgentTrace(jobId, liveView), asyncExecutor);
+    }
+
+    /**
+     * Asynchronously gets a snapshot of an agent task.
+     *
+     * @param jobId      the agent job ID
+     * @param snapshotId the snapshot ID
+     * @return a CompletableFuture that resolves to the AgentSnapshotResponse
+     */
+    public CompletableFuture<AgentSnapshotResponse> getAgentSnapshotAsync(String jobId, String snapshotId) {
+        return CompletableFuture.supplyAsync(() -> getAgentSnapshot(jobId, snapshotId), asyncExecutor);
     }
 
     /**
@@ -1260,6 +1476,30 @@ public class FirecrawlClient {
         return parts.isEmpty() ? "" : "?" + String.join("&", parts);
     }
 
+    private String researchQuery(Map<String, Object> params) {
+        List<String> parts = new ArrayList<>();
+        for (Map.Entry<String, Object> entry : params.entrySet()) {
+            Object value = entry.getValue();
+            if (value == null) continue;
+            if (value instanceof Collection<?>) {
+                for (Object item : (Collection<?>) value) {
+                    if (item != null) parts.add(urlEncode(entry.getKey()) + "=" + urlEncode(stringValue(item)));
+                }
+            } else {
+                parts.add(urlEncode(entry.getKey()) + "=" + urlEncode(stringValue(value)));
+            }
+        }
+        return parts.isEmpty() ? "" : "?" + String.join("&", parts);
+    }
+
+    private String stringValue(Object value) {
+        return value instanceof Boolean ? value.toString().toLowerCase(Locale.ROOT) : value.toString();
+    }
+
+    private String urlEncode(String value) {
+        return java.net.URLEncoder.encode(value, java.nio.charset.StandardCharsets.UTF_8);
+    }
+
     /**
      * Merges a typed options object into a request body map, using Jackson serialization.
      */
@@ -1387,11 +1627,9 @@ public class FirecrawlClient {
             if (resolvedKey == null || resolvedKey.isBlank()) {
                 resolvedKey = System.getProperty("firecrawl.apiKey");
             }
-            if (resolvedKey == null || resolvedKey.isBlank()) {
-                throw new FirecrawlException(
-                        "API key is required. Set it via builder.apiKey(), " +
-                        "FIRECRAWL_API_KEY environment variable, or firecrawl.apiKey system property.");
-            }
+            // A null/blank key is allowed: scrape, search, and interact fall back
+            // to the keyless free tier (rate-limited per IP). Other methods return
+            // 401 from the API until a key is provided.
 
             String resolvedUrl = apiUrl;
             if (resolvedUrl == null || resolvedUrl.equals(DEFAULT_API_URL)) {
