@@ -1,4 +1,6 @@
 import { Response } from "express";
+import { providerScrapeController } from "./scrape-alexandria";
+import { discoverTools } from "../../search/alexandria";
 import { config } from "../../config";
 import { logger as _logger } from "../../lib/logger";
 import {
@@ -30,7 +32,6 @@ import { getJobPriority } from "../../lib/job-priority";
 import { logRequest } from "../../services/logging/log_job";
 import { externalRequestId } from "../../lib/external-request-id";
 import { getErrorContactMessage } from "../../lib/deployment";
-import { captureExceptionWithZdrCheck } from "../../services/sentry";
 import type { BillingMetadata } from "../../services/billing/types";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 import {
@@ -51,6 +52,15 @@ export async function scrapeController(
   req: RequestWithAuth<{}, ScrapeResponse, ScrapeRequest>,
   res: Response<ScrapeResponse>,
 ) {
+  if (req.body && "alexandria" in req.body)
+    return providerScrapeController(req, res);
+  // Resolved before the root span starts so the whole request trace stays
+  // unrecorded for zero-data-retention requests (see otel-tracer).
+  const zeroDataRetentionTrace =
+    getScrapeZDR(req.acuc?.flags) === "forced" ||
+    req.body?.zeroDataRetention === true ||
+    req.body?.lockdown === true;
+
   return withSpan(
     "api.scrape.request",
     async span => {
@@ -146,6 +156,16 @@ export async function scrapeController(
         getScrapeZDR(req.acuc?.flags) === "forced" ||
         (req.body.zeroDataRetention ?? false) ||
         (req.body.lockdown ?? false);
+      if (
+        req.body.domainTools &&
+        (!req.acuc?.flags?.exchangeRetrieve || zeroDataRetention)
+      )
+        return res.status(403).json({
+          success: false,
+          error: !req.acuc?.flags?.exchangeRetrieve
+            ? "The alexandria source is not enabled for this team."
+            : "Provider discovery requires access and does not support zero data retention.",
+        });
       const billing: BillingMetadata = req.body.__agentInterop
         ? { endpoint: "agent" as const, jobId }
         : { endpoint: "scrape" as const, jobId };
@@ -464,6 +484,17 @@ export async function scrapeController(
             });
           }
 
+          if (e.code === "UNSUPPORTED_SITE") {
+            setSpanAttributes(span, {
+              "scrape.status_code": 403,
+            });
+            return res.status(403).json({
+              success: false,
+              code: e.code,
+              error: e.message,
+            });
+          }
+
           if (e.code === "SCRAPE_MEDIA_ACCESS_DENIED") {
             setSpanAttributes(span, {
               "scrape.status_code": 403,
@@ -524,18 +555,6 @@ export async function scrapeController(
             errorId: id,
             path: req.path,
             teamId: req.auth.team_id,
-          });
-          captureExceptionWithZdrCheck(e, {
-            tags: {
-              errorId: id,
-              version: "v2",
-              teamId: req.auth.team_id,
-            },
-            extra: {
-              path: req.path,
-              url: req.body.url,
-            },
-            zeroDataRetention,
           });
           setSpanAttributes(span, {
             "scrape.status_code": 500,
@@ -620,6 +639,29 @@ export async function scrapeController(
         concurrencyLimited,
         concurrencyQueueDurationMs: lockTime || undefined,
       });
+      const tools =
+        req.body.domainTools && config.FIRE_EXCHANGE_URL
+          ? await discoverTools(
+              {
+                teamId: req.auth.team_id,
+                urls: [
+                  ...new Set(
+                    [
+                      req.body.url,
+                      doc!.metadata?.sourceURL,
+                      doc!.metadata?.url,
+                    ].filter((u): u is string => typeof u === "string"),
+                  ),
+                ],
+                limit: 24,
+                timeoutMs: 10000,
+              },
+              logger,
+            ).catch(error => {
+              logger.warn("Domain tool discovery failed", { error });
+              return undefined;
+            })
+          : undefined;
 
       return res.status(200).json({
         success: true,
@@ -632,7 +674,9 @@ export async function scrapeController(
               ? lockTime || 0
               : undefined,
           },
+          ...(tools ? { tools: tools.items } : {}),
         },
+        ...(tools?.warning ? { warning: tools.warning } : {}),
         scrape_id: origin?.includes("website") ? jobId : undefined,
       });
     },
@@ -642,6 +686,7 @@ export async function scrapeController(
         "http.route": "/v2/scrape",
       },
       kind: SpanKind.SERVER,
+      zeroDataRetention: zeroDataRetentionTrace,
     },
   );
 }
