@@ -16,8 +16,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  GCP_PROJECT_ID: prometheus-461323
-  GCR_REGISTRY: gcr.io
+  ACR_NAME: prometheusagsacr
+  ACR: prometheusagsacr.azurecr.io
 
 jobs:
   build-push-update:
@@ -47,16 +47,16 @@ jobs:
       - name: Extract short SHA
         run: echo "SHORT_SHA=${GITHUB_SHA:0:7}" >> $GITHUB_ENV
 
-      - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v2
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
         with:
-          credentials_json: ${{ secrets.GCP_SA_KEY }}
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v2
 
-      - name: Configure Docker for GCR
-        run: gcloud auth configure-docker gcr.io
+      - name: ACR login
+        run: az acr login --name prometheusagsacr
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -67,16 +67,16 @@ jobs:
           context: ${{ matrix.service.context }}
           file: ${{ matrix.service.dockerfile }}
           push: true
-          tags: ${{ env.GCR_REGISTRY }}/${{ env.GCP_PROJECT_ID }}/${{ matrix.service.name }}:${{ env.SHORT_SHA }}
+          tags: ${{ env.ACR }}/${{ matrix.service.name }}:${{ env.SHORT_SHA }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Verify image in GCR
+      - name: Verify image in ACR
         run: |
-          image="${GCR_REGISTRY}/${GCP_PROJECT_ID}/${{ matrix.service.name }}:${SHORT_SHA}"
+          image="${ACR}/${{ matrix.service.name }}:${SHORT_SHA}"
           for i in 1 2 3 4 5; do
             echo "Verification attempt $i of 5"
-            if gcloud container images describe "$image" --format='get(image_summary.digest)'; then
+            if az acr repository show --name "$ACR_NAME" --image "${{ matrix.service.name }}:${SHORT_SHA}" >/dev/null 2>&1; then
               echo "Image verified: $image"
               exit 0
             fi
@@ -96,7 +96,7 @@ jobs:
         run: |
           cd k8s/base
           kustomize edit set image \
-            ${{ matrix.service.name }}=${GCR_REGISTRY}/${GCP_PROJECT_ID}/${{ matrix.service.name }}:${SHORT_SHA}
+            ${{ matrix.service.name }}=${ACR}/${{ matrix.service.name }}:${SHORT_SHA}
           echo "Updated kustomization.yaml:"
           cat kustomization.yaml
 
