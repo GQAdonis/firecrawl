@@ -1,12 +1,14 @@
 import { z } from "zod";
 import type { Response } from "express";
 import { randomUUID } from "node:crypto";
+import { v7 as uuidv7 } from "uuid";
 import { config } from "../../config";
 import { logger } from "../../lib/logger";
 import { isAgentInteropSecretValid } from "../../lib/agent-interop";
 import { externalRequestId } from "../../lib/external-request-id";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 import { checkKeyFormatRestriction } from "../../lib/key-restriction";
+import { orgIdFromAcuc } from "../../lib/team-org";
 import { logRequest } from "../../services/logging/log_job";
 import {
   callsSchema,
@@ -76,7 +78,14 @@ export async function providerScrapeController(
   if (REQUEST_ID_PATTERN.test(requestId))
     res.setHeader("x-request-id", requestId);
 
-  if (!req.acuc?.flags?.exchangeRetrieve)
+  if (req.auth.team_id.startsWith("preview_keyless_")) {
+    return res.status(403).json({
+      success: false,
+      error: "An API key is required for provider tools.",
+    });
+  }
+
+  if (!req.acuc)
     return res.status(403).json({
       success: false,
       error: "This endpoint is not enabled for this team.",
@@ -114,11 +123,14 @@ export async function providerScrapeController(
   try {
     result = await retrieveProviders({
       teamId: req.auth.team_id,
+      orgId: orgIdFromAcuc(req.acuc),
       apiKeyId: req.acuc.api_key_id ?? null,
+      apiKeyIdText: req.acuc.api_key_id_text ?? null,
       flags: req.acuc.flags,
       calls: body.alexandria,
+      resultAuthorization: req.get("authorization"),
       requestId,
-      scrapeId: randomUUID(),
+      scrapeId: uuidv7(),
       timeoutMs: body.timeout,
       bypassBilling: body.__agentInterop?.shouldBill === false,
     });
@@ -144,6 +156,7 @@ export async function providerScrapeController(
       integration: body.integration ?? null,
       target_hint: `alexandria:${body.alexandria.map(call => `${call.provider}/${call.capability}`).join(",")}`,
       zeroDataRetention: false,
+      jobAccess: false,
     }).catch(error =>
       logger.warn("Provider request logging failed", {
         error,

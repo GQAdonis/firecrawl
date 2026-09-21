@@ -45,6 +45,7 @@ interface SearchOptions {
   scrapeOptions?: ScrapeOptions;
   highlights?: boolean;
   domainTools?: boolean;
+  toolDetail?: "compact" | "summary" | "full";
   timeout: number;
 }
 
@@ -65,6 +66,8 @@ interface SearchContext {
   keylessReserved?: boolean;
   /** Effective threat protection policy; blocked domains are removed from results entirely. */
   threatProtectionPolicy?: ThreatProtectionPolicy | null;
+  /** Set when the request legitimately opted out of Safe Mode at the controller. */
+  safeModeBypassed?: boolean;
 }
 
 interface SearchExecuteResult {
@@ -244,13 +247,13 @@ export async function executeSearch(
   let toolsWarning: string | undefined;
 
   if (
-    flags?.exchangeRetrieve &&
     !zeroDataRetention &&
     !options.enterprise?.some(mode => mode === "zdr" || mode === "anon") &&
     (wantsTools || options.domainTools)
   ) {
     const discovery = await discoverTools(
       {
+        toolDetail: options.toolDetail ?? "compact",
         teamId,
         limit,
         query: wantsTools ? query : undefined,
@@ -306,6 +309,7 @@ export async function executeSearch(
         agentIndexOnly: context.agentIndexOnly,
         keylessReserved: context.keylessReserved,
         threatProtectionPolicy: threatPolicy ?? null,
+        safeModeBypassed: context.safeModeBypassed ?? false,
       };
 
       const allDocsWithCostTracking = await scrapeSearchResults(

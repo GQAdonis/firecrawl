@@ -8,6 +8,7 @@ import {
   autumnService,
   featureIdForBillingEndpoint,
 } from "../autumn/autumn.service";
+import type { LockCreditsResult } from "../autumn/types";
 import { getBillingQueue } from "../queue-service";
 import { redisRateLimitClient } from "../rate-limiter";
 import { authorizeProviders } from "./access";
@@ -77,13 +78,18 @@ const relay = (response: ExchangeResponse): ExchangeResponse => {
 
 export async function retrieveProviders(input: {
   teamId: string;
+  /** The team's org — the Autumn customer this bills against. Null when none
+   *  can be named, which is a skipped hold, the same as an unresolvable org. */
+  orgId: string | null;
   apiKeyId: number | null;
+  apiKeyIdText?: string | null;
   flags: TeamFlags | null | undefined;
   calls: ProviderCall[];
   requestId: string;
   scrapeId: string;
   timeoutMs: number;
   bypassBilling?: boolean;
+  resultAuthorization?: string;
 }): Promise<ProviderRetrieval> {
   const notExecuted = (response: ExchangeResponse): ProviderRetrieval => ({
     ...response,
@@ -100,10 +106,40 @@ export async function retrieveProviders(input: {
   if (Buffer.byteLength(JSON.stringify(input.calls)) > 256 * 1024)
     return notExecuted(refusal(400, "Provider options exceed 256 KB."));
 
+  const loadsSavedResult = input.calls.some(
+    call =>
+      call.provider === "firecrawl" &&
+      (call.capability === "bash" || call.capability === "jev") &&
+      typeof call.options?.requestId === "string",
+  );
+  if (loadsSavedResult && input.calls.length !== 1)
+    return notExecuted(
+      refusal(
+        400,
+        "Saved-result loading must be sent as a separate request; do not batch it with other calls.",
+      ),
+    );
+
+  const termsOnly =
+    input.calls.length > 0 &&
+    input.calls.every(
+      call =>
+        call.provider === "firecrawl" &&
+        (call.capability === "terms/show" ||
+          call.capability === "terms/accept"),
+    );
+  const termsIdentity =
+    termsOnly && input.orgId && input.apiKeyIdText
+      ? { organizationId: input.orgId, apiKeyId: input.apiKeyIdText }
+      : undefined;
   const billable = !input.bypassBilling;
   const id = hash([input.teamId, input.requestId]);
   const key = `alexandria:retrieve:${id}`;
-  const fingerprint = hash([input.calls, billable]);
+  const fingerprint = hash(
+    termsOnly
+      ? [input.calls, billable, termsIdentity ?? null]
+      : [input.calls, billable],
+  );
   const record: Retrieval = {
     fingerprint,
     phase: "executing",
@@ -178,6 +214,7 @@ export async function retrieveProviders(input: {
       input.teamId,
       input.calls,
       input.flags,
+      input.orgId,
     );
     if (denied) return refuse(denied);
 
@@ -215,15 +252,24 @@ export async function retrieveProviders(input: {
             "Paid provider billing is not configured. No provider was executed.",
           ),
         );
-      refundable = !(await autumnService.isRoutedThroughFirebill(input.teamId));
-      const hold = await autumnService.lockCredits({
-        teamId: input.teamId,
-        value: maximumCredits,
-        lockId: `alexandria_${id}`,
-        expiresAt: record.deadline + HOLD_GRACE_MS,
-        featureId,
-        properties,
-      });
+      // No org, no Autumn customer to hold against — the skipped hold the
+      // service already answered when it could not name one.
+      let hold: LockCreditsResult = { status: "skipped" };
+      if (input.orgId !== null) {
+        refundable = !(await autumnService.isRoutedThroughFirebill(
+          input.teamId,
+          input.orgId,
+        ));
+        hold = await autumnService.lockCredits({
+          teamId: input.teamId,
+          orgId: input.orgId,
+          value: maximumCredits,
+          lockId: `alexandria_${id}`,
+          expiresAt: record.deadline + HOLD_GRACE_MS,
+          featureId,
+          properties,
+        });
+      }
       if (hold.status === "denied")
         return refuse(
           hold.reason === "gate_unavailable"
@@ -270,7 +316,12 @@ export async function retrieveProviders(input: {
   const finalize = async (credits: number) => {
     if (!lockId) return true;
     const settled = await autumnService.finalizeCreditsLock({
-      teamId: input.teamId,
+      // Omitted without an org: the settle goes straight to Autumn, the route
+      // an unnameable org already took.
+      team:
+        input.orgId !== null
+          ? { teamId: input.teamId, orgId: input.orgId }
+          : undefined,
       lockId,
       action: credits > 0 ? "confirm" : "release",
       ...(credits > 0 ? { overrideValue: credits } : {}),
@@ -296,6 +347,10 @@ export async function retrieveProviders(input: {
       body: { requests: input.calls },
       timeoutMs: remaining(),
       requestId: id,
+      ...(loadsSavedResult && input.resultAuthorization
+        ? { resultAuthorization: input.resultAuthorization }
+        : {}),
+      ...(termsIdentity ? { termsIdentity } : {}),
       maximumCredits,
     }).catch(error => {
       throw new Error(`Exchange did not answer: ${error?.message ?? error}`);
@@ -337,6 +392,7 @@ export async function retrieveProviders(input: {
         ? await recordLedgerUsage(
             id,
             input.teamId,
+            input.orgId,
             input.apiKeyId,
             credits,
             refundable,
@@ -360,6 +416,7 @@ export async function retrieveProviders(input: {
 async function recordLedgerUsage(
   id: string,
   teamId: string,
+  orgId: string | null,
   apiKeyId: number | null,
   credits: number,
   refundable: boolean,
@@ -370,6 +427,7 @@ async function recordLedgerUsage(
         "bill_team",
         {
           team_id: teamId,
+          org_id: orgId,
           credits,
           billing: { endpoint: "scrape", chargeId: id },
           is_extract: false,
@@ -392,9 +450,12 @@ async function recordLedgerUsage(
           : "Provider usage could not be queued for the ledger; the firebill charge stands and the Exchange usage stays pending for reconciliation",
         { chargeId: id, teamId, credits, error },
       );
-      if (refundable)
+      // refundable is only ever set with an org in hand; named again so the
+      // type says so.
+      if (refundable && orgId !== null)
         await autumnService.refundCredits({
           teamId,
+          orgId,
           value: credits,
           featureId: featureIdForBillingEndpoint("scrape"),
           properties: {
